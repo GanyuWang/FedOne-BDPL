@@ -1,0 +1,5 @@
+wandb/
+assets/
+__pycache__/
+install.sh
+run.sh

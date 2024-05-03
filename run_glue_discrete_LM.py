@@ -136,7 +136,7 @@ def parse_args():
     parser.add_argument("--ckpt_path", type=str, default="./ckpts")
     parser.add_argument("--margin", type=float, default=1)
     parser.add_argument("--trial", action="store_true")
-    parser.add_argument("--use_wandb", action="store_true", default=True, help="Whether to run wandb.")
+    parser.add_argument("--use_wandb", action="store_false", default=False, help="Whether to run wandb.")
     parser.add_argument("--cuda", type=int, default=0)
     parser.add_argument("--max_length", type=int, default=450, help=(
             "The maximum total input sequence length after tokenization. Sequences longer than this will be truncated,"
@@ -209,7 +209,7 @@ class ApiCallLimitError(Exception):
 
 ngram_list = pmi()
 
-def main():
+def train():
     args = parse_args()
     assert args.task_name != 'stsb'
     ce_loss_string = 'True' if args.ce_loss else 'False'
@@ -521,13 +521,13 @@ def main():
         metric = load_metric('accuracy', args.experiment_id)
 
     # Only show the progress bar once on each machine.
-    progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
+    #progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
     completed_steps = 0
     best_eval_result = 0
     best_prompts_probs = None
     best_epoch = 0
     eval_results = []
-    test_results = []    
+    test_results = []
 
     total_batch_size = args.per_device_train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
     logger.info("***** Running training *****")
@@ -634,7 +634,7 @@ def main():
 
         if eval_result >= best_eval_result:
             best_eval_result = eval_result
-            best_prompts_probs = prompts_probs
+            best_prompts_probs = prompts_probs.clone().detach()
 
         if 'cuda' in str(args.device):
             torch.cuda.empty_cache()
@@ -820,4 +820,18 @@ def test(args, model, test_dataloader, metric, accelerator, epoch, results, prom
                     wandb.log({eval_key: test_metric_mm[key]})
 
 if __name__ == "__main__":
-    main()
+
+    # 1 分割 dataset. 按照样本id 平均分配。
+
+
+
+    # 2 每次其实只是单个client 更新，不增加更难的东西。
+
+
+    # 
+
+    # split_dataset()
+
+    # 
+
+    train()
