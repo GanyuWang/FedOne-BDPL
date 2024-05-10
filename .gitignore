@@ -3,3 +3,4 @@ assets/
 __pycache__/
 install.sh
 run.sh
+run_backup.sh

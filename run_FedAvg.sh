@@ -1,5 +1,5 @@
 # RoBERTa-based experiments
-python ./run_glue_discrete_LM.py \
+python ./run_glue_discrete_LM_FL.py \
 --task_name=mrpc \
 --per_device_train_batch_size 128 \
 --per_device_eval_batch_size 16 \
@@ -7,7 +7,11 @@ python ./run_glue_discrete_LM.py \
 --k_shot 16 --prompt_learning_rate 1e-4 \
 --sample_size 20 --prompt_length 10 \
 --prompt_search_space 200 \
---api_limit 8000 --ce_loss True
+--api_limit 8000 --ce_loss True \
+--num_train_epochs 5 \
+--FL_framework FedAvg \
+--num_clients 100 --num_client_local_step 1 --max_client_train_steps 8000 \
+
 
 # # GPT-based experiments
 # python ./run_glue_discrete_GPT.py \

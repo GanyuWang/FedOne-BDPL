@@ -156,6 +156,12 @@ def parse_args():
     parser.add_argument("--k_shot", default=-1, type=int, help="-1 denotes full-shot")
     parser.add_argument("--use_ngram", default=True, type=bool, help="If True, will extract ngrams and use them.")
     parser.add_argument("--api_limit", type=int, default=8000 , help="The limit of the API request")
+    # Federated learning
+    parser.add_argument("--FL_framework", type=str, default="FedAvg", help="Which Federated Learning Framework: FedAvg, FedSeq, ")
+    parser.add_argument("--num_clients", type=int, default=10 , help="The number of clients in FL.")
+    parser.add_argument("--num_client_local_step", type=int, default=1000 , help="The number of clients' local update steps in FL.")
+    parser.add_argument("--max_client_train_steps", type=int, default=8000, help="Total number of training steps to perform. If provided, overrides num_train_epochs.")
+    
     args = parser.parse_args()
 
     args.train_file = './dataset/' + args.file_name + '/train.csv' if args.file_name else None
@@ -175,6 +181,10 @@ def parse_args():
         if args.validation_file is not None:
             extension = args.validation_file.split(".")[-1]
             assert extension in ["csv", "json"], "`validation_file` should be a csv or a json file."
+
+    # special design for FL. 
+    args.k_shot = args.k_shot * args.num_clients  # making each FL hold a k_shot dataset. 
+
     return args
 
 def pmi():
@@ -209,8 +219,8 @@ class ApiCallLimitError(Exception):
 
 ngram_list = pmi()
 
-def train():
-    args = parse_args()
+def prepare_and_load_dataset(args):
+    
     assert args.task_name != 'stsb'
     ce_loss_string = 'True' if args.ce_loss else 'False'
 
@@ -281,6 +291,7 @@ def train():
 
     num_labels = len(label_to_id)
 
+
     # Load pretrained model and tokenizer
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
@@ -301,11 +312,7 @@ def train():
         model.config.label2id = label_to_id
         model.config.id2label = {id: label for label, id in config.label2id.items()}
 
-    @counter
-    def train_api_request(input_ids=None, attention_mask=None):
-        sequence_output = model(input_ids=input_ids, attention_mask=attention_mask)
-        return sequence_output
-
+    
     prompt_length = args.prompt_length
     hingeloss = MarginLoss(margin=args.margin, target=False)
     ce_loss = CrossEntropyLoss()
@@ -325,6 +332,7 @@ def train():
 
     padding = "max_length" if args.pad_to_max_length else False
 
+    
     def preprocess_function(examples):
         # Tokenize the texts
         if args.low_resource:
@@ -391,7 +399,8 @@ def train():
             result["labels"]= torch.tensor(target_encodings['input_ids']).squeeze(dim=1).to(args.device)
             
         return result
-
+    
+    # 
     def preprocess_function_k_shot(examples):
         random_indices = list(range(0, len(examples["label"])))
         random.shuffle(random_indices)
@@ -497,6 +506,8 @@ def train():
     else:
         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=(8 if accelerator.use_fp16 else None))
 
+
+    # split dataset. 
     train_dataloader = DataLoader(train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size)
     eval_dataloader = DataLoader(eval_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
     test_dataloader = DataLoader(test_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
@@ -507,11 +518,6 @@ def train():
         test_dataloader_mm = None
     model, train_dataloader, eval_dataloader, test_dataloader = accelerator.prepare(model, train_dataloader, eval_dataloader, test_dataloader)
 
-    # Note -> the training dataloader needs to be prepared before we grab his length below (cause its length will be shorter in multiprocess)
-    # Scheduler and math around the number of training steps.
-    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
-    args.max_train_steps = args.num_train_epochs * (num_update_steps_per_epoch)
-
     # Get the metric function
     if args.task_name is not None:
         metric = load_metric("glue", args.task_name, experiment_id=args.experiment_id)
@@ -520,129 +526,162 @@ def train():
     else:
         metric = load_metric('accuracy', args.experiment_id)
 
-    # Only show the progress bar once on each machine.
-    #progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
-    completed_steps = 0
-    best_eval_result = 0
-    best_prompts_probs = None
-    best_epoch = 0
-    eval_results = []
-    test_results = []
+    return (accelerator, label_to_id, tokenizer, config, model, prompt_length, metric), \
+           (hingeloss, ce_loss), \
+           (train_dataset, eval_dataset, test_dataset, data_collator), \
+           (train_dataloader, eval_dataloader, test_dataloader, test_dataloader_mm) \
 
-    total_batch_size = args.per_device_train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
-    logger.info("***** Running training *****")
-    logger.info(f"  Num examples = {len(train_dataset)}")
-    logger.info(f"  Num Epochs = {args.num_train_epochs}")
-    logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
-    logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
-    logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
-    logger.info(f"  Total optimization steps = {args.max_train_steps}")
 
-    model.eval()
-    for name, param in model.named_parameters():
-        param.requires_grad = False
+@counter
+def train_api_request(model, input_ids=None, attention_mask=None):
+    sequence_output = model(input_ids=input_ids, attention_mask=attention_mask)
+    return sequence_output
 
-    # Black-box Training
-    prompt_search_space = args.prompt_search_space
-    prompts_probs = torch.FloatTensor([[1 / prompt_search_space] * prompt_search_space] * prompt_length)
-    prompts_probs.requires_grad = True
+
+# Split the dataset. 
+def split_dataset_among_clients(dataset, num_clients, mode="seq"):
+
+    assert len(dataset) > num_clients
+
+    # Determine the indices for splitting
+    indices = list(range(len(dataset)))
+    if mode == "random":
+        random.shuffle(indices)  # Shuffle only in random mode
+
+    # Calculate the size of each subset
+    subset_size = len(dataset) // num_clients
+    extra_samples = len(dataset) % num_clients
+
+    # Split the dataset into subsets
+    subsets = []
+    start_idx = 0
+    for i in range(num_clients):
+        if i < extra_samples:
+            end_idx = start_idx + subset_size + 1
+        else:
+            end_idx = start_idx + subset_size
+
+        # Select a range of indices from the dataset to create subsets
+        subset_indices = indices[start_idx:end_idx]
+        subset = dataset.select(subset_indices)
+        subsets.append(subset)
+        start_idx = end_idx
+
+    return subsets
+
+
+class Client:
+    def __init__(self, args, accelerator, client_partial_train_dataset, data_collator):
+        # initialize prompt. 
+        prompt_search_space = args.prompt_search_space
+        prompt_length = args.prompt_length
+        self.prompts_probs = torch.FloatTensor([[1 / prompt_search_space] * prompt_search_space] * prompt_length)
+        self.prompts_probs.requires_grad = True
+        # 
+        self.prompt_optimizer = AdamW([{
+            "params": [self.prompts_probs],
+            "weight_decay": args.weight_decay,
+        }], lr=args.prompt_learning_rate)
+
+        # FL parameter. 
+        self.num_local_step = args.num_client_local_step
+
+        self.dataset = client_partial_train_dataset  # Local dataset for the client
+        self.train_dataloader = DataLoader(self.dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size)
+        self.train_dataloader = accelerator.prepare(self.train_dataloader)
+        self.completed_steps = 0
     
-    prompt_optimizer = AdamW([{
-        "params": [prompts_probs],
-        "weight_decay": args.weight_decay,
-    }], lr=args.prompt_learning_rate)
+    def get_len_dataset(self):
+        return len(self.dataset)
 
-    print("----Optimizing black-box prompts----")
-    for epoch in range(args.num_train_epochs):
-        try:
-            for step, batch in enumerate(train_dataloader):
-                prompts_dist = torch.distributions.Categorical(prompts_probs)
-                with torch.no_grad():
-                    if args.trial and step >= 100:
-                        break
-                    bsz = len(batch['input_ids'])
-                    label = batch["labels"].to(args.device)
-                    loss_list = []
-                    prompts_discrete_indices_list = []
-                    for k in range(args.sample_size):
-                        prompts_discrete_indices = prompts_dist.sample()
-                        prompts_discrete_indices_list.append(prompts_discrete_indices)
-                        if args.use_ngram:
-                            prompts_discrete_indices_ngram_list = []
-                            indices_list = prompts_discrete_indices.int().tolist()
-                            for idx in indices_list:
-                                prompts_discrete_indices_ngram_list.append(ngram_list[idx])
-                            prompts_discrete_ngram_indices = torch.tensor(prompts_discrete_indices_ngram_list)
-                            cur_input_ids = torch.cat([torch.zeros(bsz, 1, dtype=torch.long).to(args.device), prompts_discrete_ngram_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-                        else: 
-                            cur_input_ids = torch.cat([torch.zeros(bsz, 1, dtype=torch.long).to(args.device), prompts_discrete_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
+    def local_training(self, args, model, average_prompts_probs):
 
-                        cur_attention_mask = torch.cat([torch.ones(bsz, 1).to(args.device), torch.ones(bsz, prompt_length).to(args.device), batch["attention_mask"][:, 1:]],dim=1)
-                        mask_pos = np.where(np.array(cur_input_ids.cpu()) == tokenizer.mask_token_id) 
-                        mask_pos = torch.tensor(mask_pos[-1])
-                        sequence_output = train_api_request(input_ids=cur_input_ids, attention_mask=cur_attention_mask)
-                        last_hidden_state = sequence_output[0].squeeze()
-                        logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
+        # Load the average prompt into the client's model
+        self.prompts_probs.data = average_prompts_probs.clone().detach()
+        self.prompts_probs.requires_grad = True
+        
+        # Example training loop
+        for _ in range(self.num_local_step):
+            try:
+                for step, batch in enumerate(self.train_dataloader):
+                    prompts_dist = torch.distributions.Categorical(self.prompts_probs)
+                    with torch.no_grad():
+                        if args.trial and self.completed_steps >= 100:
+                            break
+                        bsz = len(batch['input_ids'])
+                        label = batch["labels"].to(args.device)
+                        loss_list = []
+                        prompts_discrete_indices_list = []
+                        for k in range(args.sample_size):
+                            prompts_discrete_indices = prompts_dist.sample()
+                            prompts_discrete_indices_list.append(prompts_discrete_indices)
+                            if args.use_ngram:
+                                prompts_discrete_indices_ngram_list = []
+                                indices_list = prompts_discrete_indices.int().tolist()
+                                for idx in indices_list:
+                                    prompts_discrete_indices_ngram_list.append(ngram_list[idx])
+                                prompts_discrete_ngram_indices = torch.tensor(prompts_discrete_indices_ngram_list)
+                                cur_input_ids = torch.cat([torch.zeros(bsz, 1, dtype=torch.long).to(args.device), prompts_discrete_ngram_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
+                            else: 
+                                cur_input_ids = torch.cat([torch.zeros(bsz, 1, dtype=torch.long).to(args.device), prompts_discrete_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
 
-                        label_keys = list(label_to_id.keys())
-                        label_map = {}
-                        for target in label_keys:
-                            label_map[tokenizer.encode(target, add_special_tokens=False)[0]] = label_to_id[target]
+                            cur_attention_mask = torch.cat([torch.ones(bsz, 1).to(args.device), torch.ones(bsz, prompt_length).to(args.device), batch["attention_mask"][:, 1:]],dim=1)
+                            mask_pos = np.where(np.array(cur_input_ids.cpu()) == tokenizer.mask_token_id) 
+                            mask_pos = torch.tensor(mask_pos[-1])
+                            sequence_output = train_api_request(model, input_ids=cur_input_ids, attention_mask=cur_attention_mask)
+                            last_hidden_state = sequence_output[0].squeeze()
+                            logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
+
+                            label_keys = list(label_to_id.keys())
+                            label_map = {}
+                            for target in label_keys:
+                                label_map[tokenizer.encode(target, add_special_tokens=False)[0]] = label_to_id[target]
+                            
+                            converted_target = label.clone()
+                            for key, val in label_map.items():
+                                converted_target[label == key] = val
+                            interest_index = list(label_map.keys())
+                            logits = logits[:, interest_index]
+                            pred = logits.argmax(dim=-1)
+
+                            if args.ce_loss:
+                                loss = ce_loss(logits.view(-1, config.num_labels), converted_target)
+                            else:
+                                loss = hingeloss(logits, converted_target)
+                            loss_list.append(loss.item())
+
+                            if train_api_request.count >= args.api_limit:
+                                raise ApiCallLimitError()
+
+                        loss_avg = sum(loss_list) / args.sample_size
                         
-                        converted_target = label.clone()
-                        for key, val in label_map.items():
-                            converted_target[label == key] = val
-                        interest_index = list(label_map.keys())
-                        logits = logits[:, interest_index]
-                        pred = logits.argmax(dim=-1)
+                        self.prompt_optimizer.zero_grad()
 
-                        if args.ce_loss:
-                            loss = ce_loss(logits.view(-1, config.num_labels), converted_target)
-                        else:
-                            loss = hingeloss(logits, converted_target)
-                        loss_list.append(loss.item())
+                        derivative = (-1 / self.prompts_probs).repeat(args.sample_size, 1, 1)
+                        for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
+                            for i in range(prompt_length):
+                                derivative[k][i][prompts_discrete_indices[i]] *= -1
 
-                        if train_api_request.count >= args.api_limit:
-                            raise ApiCallLimitError()
+                        self.prompts_probs.grad = torch.zeros_like(self.prompts_probs)
+                        for k in range(args.sample_size):
+                            self.prompts_probs.grad += 1 / (args.sample_size - 1) * (loss_list[k] - loss_avg) * derivative[k]
 
-                    loss_avg = sum(loss_list) / args.sample_size
-                    
-                    prompt_optimizer.zero_grad()
+                        
+                        torch.nn.utils.clip_grad_norm_(self.prompts_probs, 3)
+                        
+                        self.prompt_optimizer.step()
+                        constrainScoreByWholeExact(self.prompts_probs)
 
-                    derivative = (-1 / prompts_probs).repeat(args.sample_size, 1, 1)
-                    for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
-                        for i in range(prompt_length):
-                            derivative[k][i][prompts_discrete_indices[i]] *= -1
+                        self.completed_steps += 1
+                        if self.completed_steps >= args.max_client_train_steps:
+                            break
 
-                    prompts_probs.grad = torch.zeros_like(prompts_probs)
-                    for k in range(args.sample_size):
-                        prompts_probs.grad += 1 / (args.sample_size - 1) * (loss_list[k] - loss_avg) * derivative[k]
-                    
-                    torch.nn.utils.clip_grad_norm_(prompts_probs, 3)
-                    prompt_optimizer.step()
-                    constrainScoreByWholeExact(prompts_probs)
-                    
-                    if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
-                        progress_bar.update(1)
-                        completed_steps += 1
-                    if completed_steps >= args.max_train_steps:
-                        break
-        except ApiCallLimitError:
-            pass
+            except ApiCallLimitError:
+                pass
 
-        eval_result = evaluate(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=prompts_probs, prompt_length=prompt_length, tokenizer=tokenizer)
+        return self.prompts_probs.clone().detach()
 
-        if eval_result >= best_eval_result:
-            best_eval_result = eval_result
-            best_prompts_probs = prompts_probs.clone().detach()
 
-        if 'cuda' in str(args.device):
-            torch.cuda.empty_cache()
-            
-        if train_api_request.count >= args.api_limit:
-            break
-    
-    test(args, model, test_dataloader, metric, accelerator, epoch, test_results, prompts_probs=best_prompts_probs, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
 
 def evaluate(args,  model, eval_dataloader, metric, ce_loss,config, accelerator, epoch, results, prompts_probs=None, prompt_length=None,tokenizer=None):
     prompts_discrete_indices = prompts_probs.argmax(1)
@@ -714,6 +753,7 @@ def evaluate(args,  model, eval_dataloader, metric, ce_loss,config, accelerator,
 def test(args, model, test_dataloader, metric, accelerator, epoch, results, prompts_probs=None, prompt_length=None, tokenizer=None, test_dataloader_mm=None):
     if args.task_name == None or args.k_shot >= 0:
         prompts_discrete_indices = prompts_probs.argmax(1)
+        #raise Exception(prompts_discrete_indices)
 
         if args.use_ngram:
             prompts_discrete_indices_ngram_list = []
@@ -821,17 +861,70 @@ def test(args, model, test_dataloader, metric, accelerator, epoch, results, prom
 
 if __name__ == "__main__":
 
+    args = parse_args()
+
+    # 0 准备dataset。 
+    info1, info2, info3, info4 = prepare_and_load_dataset(args)
+    accelerator, label_to_id, tokenizer, config, model, prompt_length, metric = info1
+    hingeloss, ce_loss = info2
+    train_dataset, eval_dataset, test_dataset, data_collator = info3
+    train_dataloader, eval_dataloader, test_dataloader, test_dataloader_mm = info4
+
+    # special variables for record. 
+    len_entire_train_dataset = len(train_dataset) 
+    best_eval_result = 0
+    eval_results = [] # for record. 
+    test_results = []
+
     # 1 分割 dataset. 按照样本id 平均分配。
+    client_trainset_list = split_dataset_among_clients(train_dataset, args.num_clients, mode="random")
+    # Ininialize client
+    client_list = []
+    for client_idx in range(args.num_clients):
+        client = Client(args, accelerator, client_trainset_list[client_idx], data_collator)
+        client_list.append(client) 
+
+    # 固定模型。
+    model.eval()
+    for name, param in model.named_parameters():
+        param.requires_grad = False
+
+    # 2 写 FL训练的框架。
+    average_prompts_probs = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
+    for epoch in range(args.num_train_epochs):
+        
+        if args.FL_framework == "FedAvg":
+            # training. 
+            client_prompts_probs_list = []
+            weight_list = []
+            for client_idx in range(args.num_clients):
+                # Each client train and update.  
+                client_prompts_probs = client_list[client_idx].local_training(args, model, average_prompts_probs)
+                client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
+                # get the weight for averaging. 
+                weight = client_list[client_idx].get_len_dataset() /len_entire_train_dataset
+                weight_list.append(weight) #print("weight: \n", weight)
+            # Fed Average.
+            average_prompts_probs = sum(weight * tensor for weight, tensor in zip(weight_list, client_prompts_probs_list)) 
+        elif args.FL_framework == "FedSeq":
+            for client_idx in range(args.num_clients):
+                average_prompts_probs = client_list[client_idx].local_training(args, model, average_prompts_probs)
+
+        # Evaluation. 
+        eval_result = evaluate(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=average_prompts_probs, prompt_length=prompt_length, tokenizer=tokenizer)
+        
+        if eval_result >= best_eval_result:
+            best_eval_result = eval_result
+            best_prompts_probs = average_prompts_probs.clone().detach()
+        if 'cuda' in str(args.device):
+            torch.cuda.empty_cache()
+        if train_api_request.count >= args.api_limit:
+            break
+
+
+    test(args, model, test_dataloader, metric, accelerator, epoch, test_results, prompts_probs=best_prompts_probs, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
+    print( f"The total API calls for training in all client is: {train_api_request.count}")
+    # train(args, accelerator, label_to_id, tokenizer, config, model, prompt_length, hingeloss, ce_loss, train_dataset, eval_dataset, test_dataset, data_collator )
 
 
 
-    # 2 每次其实只是单个client 更新，不增加更难的东西。
-
-
-    # 
-
-    # split_dataset()
-
-    # 
-
-    train()
