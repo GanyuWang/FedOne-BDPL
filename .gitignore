@@ -1,6 +1,7 @@
 wandb/
 assets/
 __pycache__/
+ExperimentResult/
 install.sh
 run.sh
 run_backup.sh

@@ -226,7 +226,6 @@ class ApiCallLimitError(Exception):
 
 ngram_list = pmi()
 
-
 def prepare_and_load_dataset(args):
     
     assert args.task_name != 'stsb'
@@ -740,7 +739,6 @@ class ClientPromptTuning:
 
                     sequence_output = train_api_request(model, input_ids=input_ids, attention_mask=attention_mask) #
                     last_hidden_state = sequence_output[0].squeeze()
-                    
                     logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
                     logits = logits[:, interest_index]
                     #pred = logits.argmax(dim=-1)
@@ -770,29 +768,116 @@ class ClientPromptTuning:
         return local_theta
 
 
+class PrefixTunedRoberta(nn.Module):
+    def __init__(self, model, config, prefix_length=10):
+        super().__init__()
+        self.config = config
+        self.prefix_length = prefix_length
+        self.prefix_embeddings = nn.Parameter(torch.randn(prefix_length, config.hidden_size))
+        self.model = model
+        # Freeze all parameters in the base model
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        # has depenency outside. 
+        if label_to_id is not None:
+            self.config.label2id = label_to_id
+            self.config.id2label = {id: label for label, id in config.label2id.items()}
+
+    def forward(self, input_ids=None, attention_mask=None, **kwargs):
+        # Generate prefix for each batch
+        batch_size = input_ids.size(0)
+
+        prefix = self.prefix_embeddings.unsqueeze(0).repeat(batch_size, 1, 1)  # Shape: [batch_size, prefix_length, hidden_size]
+
+        # Get embeddings from original model
+        inputs_embeds = self.model.roberta.embeddings(input_ids)  # Assuming input_ids is not None
+
+        # Concatenate prefix embeddings
+        inputs_embeds = torch.cat((prefix, inputs_embeds), dim=1)
+
+        # Adjust attention mask for the prefix
+        if attention_mask is not None:
+            prefix_attention_mask = torch.ones((batch_size, self.prefix_length), dtype=torch.long, device=input_ids.device)
+            attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
+
+        # Pass to the original model's forward method
+        output = self.model.forward(inputs_embeds=inputs_embeds, attention_mask=attention_mask, **kwargs)
+        return output
+
 class ClientPrefixTuning:
     def __init__(self, args, accelerator, model, client_partial_train_dataset, data_collator):
-        pass
-    class PrefixTunedRoberta(RobertaModel):
-        def __init__(self, config):
-            super().__init__(config)
-            self.prefix_length = 10  # Length of the prefix
-            self.prefix_embeddings = torch.nn.Embedding(self.prefix_length, config.hidden_size)
-            self.prefix_embeddings.weight.requires_grad = True  # Make prefix embeddings trainable
+        # optimizer. 
+        prompt_parameters = [param for param in model.parameters() if param.requires_grad]
+        self.prompt_optimizer = torch.optim.AdamW(prompt_parameters, lr=args.prompt_learning_rate)
+        # FL parameter. 
+        self.num_local_step = args.num_client_local_step
+        self.dataset = client_partial_train_dataset  # Local dataset for the client
+        self.train_dataloader = DataLoader(self.dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size)
+        self.train_dataloader = accelerator.prepare(self.train_dataloader)
+        self.completed_steps = 0
 
-        def forward(self, input_ids, **kwargs):
-            # Generate prefix embeddings
-            batch_size = input_ids.shape[0]
-            prefix_ids = torch.arange(self.prefix_length).unsqueeze(0).repeat(batch_size, 1).to(input_ids.device)
-            prefix_embeddings = self.prefix_embeddings(prefix_ids)
+    def get_len_dataset(self):
+        return len(self.dataset)
 
-            # Process the input embeddings
-            inputs_embeds = self.embeddings(input_ids)
-            extended_inputs_embeds = torch.cat([prefix_embeddings, inputs_embeds], dim=1)
+    def local_training(self, args, model, tokenizer, average_theta):
 
-            # Continue with the forward pass as usual
-            outputs = super().forward(inputs_embeds=extended_inputs_embeds, **kwargs)
-            return outputs
+        original_theta = model.prefix_embeddings.clone().detach()
+        # model, assign the trainable parameter. 
+        # train with local data. 
+        for _ in range(self.num_local_step):
+            try:
+                for step, batch in enumerate(self.train_dataloader):
+                    # input_ids, attn_mask
+                    input_ids = batch['input_ids']
+                    attention_mask = batch["attention_mask"]
+                    # Find the maks position. 
+                    # bsz = len(batch['input_ids'])
+                    mask_pos = np.where(np.array(input_ids.cpu()) == tokenizer.mask_token_id)     # 找到 mask position. 
+                    mask_pos = torch.tensor(mask_pos[-1]) 
+                    
+                    # label and convert to target. 
+                    label = batch["labels"]
+                    label_keys = list(label_to_id.keys())
+                    label_map = {}
+                    for target in label_keys:
+                        label_map[tokenizer.encode(target, add_special_tokens=False)[0]] = label_to_id[target]
+
+                    converted_target = label.clone()
+                    for key, val in label_map.items():
+                        converted_target[label == key] = val
+                    interest_index = list(label_map.keys())
+
+                    sequence_output = train_api_request(model, input_ids=input_ids, attention_mask=attention_mask) #
+                    last_hidden_state = sequence_output[0].squeeze()
+                    
+                    logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
+                    logits = logits[:, interest_index]
+                    
+                    #pred = logits.argmax(dim=-1)
+
+                    if args.ce_loss:
+                        loss = ce_loss(logits.view(-1, config.num_labels), converted_target)
+                    else:
+                        loss = hingeloss(logits, converted_target)
+
+                    loss.backward()
+                    self.prompt_optimizer.step()
+
+                    if train_api_request.count >= args.api_limit:
+                        raise ApiCallLimitError()
+
+                    self.completed_steps += 1
+                    if self.completed_steps >= args.max_client_train_steps:
+                        break
+
+            except ApiCallLimitError:
+                pass
+        # return the trained parameter.
+        local_theta = model.prefix_embeddings.clone().detach()
+        # Restore the model. 
+        model.prefix_embeddings.data = original_theta
+        return local_theta
 
 def evaluate(args,  model, eval_dataloader, metric, ce_loss,config, accelerator, epoch, results, prompts_probs=None, prompt_length=None,tokenizer=None):
     prompts_discrete_indices = prompts_probs.argmax(1)
@@ -822,6 +907,7 @@ def evaluate(args,  model, eval_dataloader, metric, ce_loss,config, accelerator,
         sequence_output = model(input_ids=batch['input_ids'], attention_mask=batch["attention_mask"])
         last_hidden_state = sequence_output[0].squeeze()
         logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
+        
 
         label = batch["labels"].to(args.device)
         label_keys = list(label_to_id.keys())
@@ -833,6 +919,7 @@ def evaluate(args,  model, eval_dataloader, metric, ce_loss,config, accelerator,
             converted_target[label == key] = val
         interest_index = list(label_map.keys())
         logits = logits[:, interest_index]
+
         eval_loss_c = ce_loss(logits.view(-1, config.num_labels), converted_target)
         predictions = logits.argmax(dim=-1)
 
@@ -987,8 +1074,6 @@ if __name__ == "__main__":
     eval_results = [] # for record. 
     test_results = []
 
-    
-
     # Black-box tuning. 
     if args.prompt_tuning_method in ["BDPL", "BBT"]:
         model.eval()
@@ -996,7 +1081,7 @@ if __name__ == "__main__":
             param.requires_grad = False
 
     # White-box  Prompt tuning. 
-    if args.prompt_tuning_method == "prompt-tuning":
+    elif args.prompt_tuning_method == "prompt-tuning":
         # Prompt Tuning. Configuration. 
         peft_config = PromptTuningConfig(
             task_type=TaskType.CAUSAL_LM,
@@ -1008,8 +1093,13 @@ if __name__ == "__main__":
         # local trainable = average theta. 
         model = get_peft_model(model, peft_config)
     elif args.prompt_tuning_method == "prefix-tuning":
-        pass
+        #prefix_config = RobertaConfig.from_pretrained(args.model_name_or_path)
+        model = PrefixTunedRoberta(model, config, args.prompt_length).to(args.device)
+        
+    print(f"The prompt tuning method is: {args.prompt_tuning_method}")
+
     
+
     # 1 分割 dataset. 按照样本id 平均分配。
     client_trainset_list = split_dataset_among_clients(train_dataset, args.num_clients, mode="random")
 
@@ -1023,15 +1113,16 @@ if __name__ == "__main__":
         elif args.prompt_tuning_method == "prefix-tuning":
             client = ClientPrefixTuning(args, accelerator, model, client_trainset_list[client_idx], data_collator)
         client_list.append(client) 
-    print(f"The prompt tuning method is: {args.prompt_tuning_method}")
+    
 
     # 2 写 FL训练的框架。
     if args.prompt_tuning_method == "BDPL":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
     elif args.prompt_tuning_method == "prompt-tuning":
         average_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
-        
-
+    elif args.prompt_tuning_method == "prefix-tuning":
+        average_theta = model.prefix_embeddings.clone().detach()
+    
     # Start the training process. 
     for epoch in range(args.num_train_epochs):
         if args.FL_framework == "FedAvg":
@@ -1048,13 +1139,17 @@ if __name__ == "__main__":
             # Fed Average.
             average_theta = sum(weight * tensor for weight, tensor in zip(weight_list, client_prompts_probs_list)) 
             if args.prompt_tuning_method == "prompt-tuning":
-                    model.prompt_encoder.default.embedding.weight.data = average_theta
+                model.prompt_encoder.default.embedding.weight.data = average_theta
+            elif args.prompt_tuning_method == "prefix-tuning":
+                model.prefix_embeddings.data = average_theta 
 
         elif args.FL_framework == "FedSeq":
             for client_idx in range(args.num_clients):
                 average_theta = client_list[client_idx].local_training(args, model, tokenizer, average_theta)
                 if args.prompt_tuning_method == "prompt-tuning":
                     model.prompt_encoder.default.embedding.weight.data = average_theta
+                elif args.prompt_tuning_method == "prefix-tuning":
+                    model.prefix_embeddings.data = average_theta 
 
         # Evaluation. 
         eval_result = evaluate(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
