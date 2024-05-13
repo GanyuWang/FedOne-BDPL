@@ -29,6 +29,8 @@ import wandb
 from peft import get_peft_config, get_peft_model,  TaskType, PeftType
 from peft import PromptTuningInit, PromptTuningConfig, PrefixTuningConfig, PromptEncoderConfig
 from cmaes import CMA
+import cma
+from scipy.optimize import minimize
 import csv
 import time
 
@@ -592,9 +594,18 @@ class ClientBBT:
         self.d = 20 # low dimension
         self.embedding_dim = model.get_input_embeddings().embedding_dim
         self.D = args.prompt_length * self.embedding_dim # prompt space dimension. 
-        self.A = torch.randn(self.D, self.d)  # the Mapping from low space to prompt space
+        self.A = torch.randn(self.D, self.d).to(args.device)  # the Mapping from low space to prompt space
         self.sigma = 1.2
         self.optimizer = CMA(mean=np.zeros(self.d), sigma=self.sigma)
+
+        # cma_opts = {
+        #     'seed': args.seed,
+        #     'popsize': 1,
+        #     'maxiter': 1,
+        #     'verbose': -1,
+        #     'bounds' : [-5, 5]
+        # }
+        # self.optimizer = cma.CMAEvolutionStrategy(np.zeros(self.d), self.sigma, inopts=cma_opts)
 
         # FL parameter. 
         self.dataset = client_partial_train_dataset  # Local dataset for the client
@@ -637,13 +648,14 @@ class ClientBBT:
 
                     # sample from z. cmaes
                     z = self.optimizer.ask()
+                    z = torch.from_numpy(z).float().to(args.device)
                     batch_size = input_ids.size(0)
-                    prefix_embedding = self.A * z # p_0 is none
-                    prefix = prefix_embedding.unsqueeze(0).repeat(batch_size, 1, 1).to(args.device) # 这里有问题。需要的是
-                    raise Exception()
+                    prefix_embedding = torch.matmul(self.A, z)# p_0 is none
+                    prefix_embedding = prefix_embedding.reshape(args.prompt_length, -1)
+                    prefix = prefix_embedding.reshape((args.prompt_length, -1)).repeat(batch_size, 1, 1).to(args.device) # 这里有问题。需要的是
                     inputs_embeds = model.roberta.embeddings(input_ids)  # Assuming input_ids is not None
                     inputs_embeds = torch.cat((prefix, inputs_embeds), dim=1)    
-                    prefix_attention_mask = torch.ones((batch_size, self.prefix_length), dtype=torch.long, device=input_ids.device)
+                    prefix_attention_mask = torch.ones((batch_size, args.prompt_length), dtype=torch.long, device=input_ids.device)
                     attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
 
                     # forward with the embedding layer. 
@@ -661,7 +673,7 @@ class ClientBBT:
                         loss = hingeloss(logits, converted_target)
 
                     # cma-es
-                    solutions.append((z, loss))
+                    solutions.append((z.cpu().numpy(), loss))
 
                     if train_api_request.count >= args.api_limit:
                         raise ApiCallLimitError()
@@ -675,7 +687,8 @@ class ClientBBT:
             pass
         # return the trained parameter.
 
-        best_z = self.optimizer.best_solution
+        best_z = self.optimizer.best.get('x')
+        print(best_z)
         local_theta = best_z
 
         return local_theta
