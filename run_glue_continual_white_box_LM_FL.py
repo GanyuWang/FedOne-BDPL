@@ -28,7 +28,7 @@ from loss import *
 import wandb
 from peft import get_peft_config, get_peft_model,  TaskType, PeftType
 from peft import PromptTuningInit, PromptTuningConfig, PrefixTuningConfig, PromptEncoderConfig
-import cames
+from cmaes import CMA
 import csv
 import time
 
@@ -593,7 +593,7 @@ class ClientBBT:
         self.embedding_dim = model.get_input_embeddings().embedding_dim
         self.D = args.prompt_length * self.embedding_dim # prompt space dimension. 
         self.A = torch.randn(self.D, self.d)  # the Mapping from low space to prompt space
-        self.optimizer = CMA(mean=torch.zeros(self.d))
+        self.optimizer = CMA(mean=torch.zeros(self.d), sigma=1.2)
 
         # FL parameter. 
         self.dataset = client_partial_train_dataset  # Local dataset for the client
@@ -611,7 +611,7 @@ class ClientBBT:
         try:
             for step, batch in enumerate(self.train_dataloader):
                 solutions = [] 
-                for _ in range(self.optimizer.population_size)  # population size. 
+                for _ in range(self.optimizer.population_size):  # population size.
 
                     # input_ids, attn_mask
                     input_ids = batch['input_ids']
