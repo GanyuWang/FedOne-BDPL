@@ -11,7 +11,8 @@ python ./run_glue_continual_white_box_LM_FL.py \
 --api_limit 8000 --ce_loss True \
 --num_train_epochs 100 \
 --FL_framework FedSeq --num_clients 1 --num_client_local_step 1 --max_client_train_steps 8000 \
---prompt_tuning_method prefix-tuning
+--prompt_tuning_method BBT \
+--log_file_name TempResult
 
 
 # # GPT-based experiments

@@ -28,7 +28,9 @@ from loss import *
 import wandb
 from peft import get_peft_config, get_peft_model,  TaskType, PeftType
 from peft import PromptTuningInit, PromptTuningConfig, PrefixTuningConfig, PromptEncoderConfig
-
+import cames
+import csv
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -168,7 +170,8 @@ def parse_args():
     parser.add_argument("--max_client_train_steps", type=int, default=8000, help="Total number of training steps to perform. If provided, overrides num_train_epochs.")
     # white box prompt tuning. 
     parser.add_argument("--prompt_tuning_method", type=str, default="BDPL", help="Which white-box tuning method:BBT, BDPL, prefix-tuning, prompt-tuning, " )
-    
+    # log file. 
+    parser.add_argument("--log_file_name", type=str, default="BDPL", help="log file path." )
     args = parser.parse_args()
 
     args.train_file = './dataset/' + args.file_name + '/train.csv' if args.file_name else None
@@ -582,6 +585,99 @@ def print_trainable_parameters(model):
         if param.requires_grad:
             print(f"{name}: {param.numel()}")
 
+class ClientBBT:
+    def __init__(self, args, accelerator, model, client_partial_train_dataset, data_collator):
+
+        # optimizer. 
+        self.d = 20 # low dimension
+        self.embedding_dim = model.get_input_embeddings().embedding_dim
+        self.D = args.prompt_length * self.embedding_dim # prompt space dimension. 
+        self.A = torch.randn(self.D, self.d)  # the Mapping from low space to prompt space
+        self.optimizer = CMA(mean=torch.zeros(self.d))
+
+        # FL parameter. 
+        self.dataset = client_partial_train_dataset  # Local dataset for the client
+        self.train_dataloader = DataLoader(self.dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size)
+        self.train_dataloader = accelerator.prepare(self.train_dataloader)
+        self.completed_steps = 0
+    
+
+    def get_len_dataset(self):
+        return len(self.dataset)
+
+    def local_training(self, args, model, tokenizer, average_theta, tracker):
+
+        # train with local data. 
+        try:
+            for step, batch in enumerate(self.train_dataloader):
+                solutions = [] 
+                for _ in range(self.optimizer.population_size)  # population size. 
+
+                    # input_ids, attn_mask
+                    input_ids = batch['input_ids']
+                    attention_mask = batch["attention_mask"]
+                    # Find the maks position. 
+                    # bsz = len(batch['input_ids'])
+                    mask_pos = np.where(np.array(input_ids.cpu()) == tokenizer.mask_token_id)     # 找到 mask position. 
+                    mask_pos = torch.tensor(mask_pos[-1]) 
+                    
+                    # label and convert to target. 
+                    label = batch["labels"]
+                    label_keys = list(label_to_id.keys())
+                    label_map = {}
+                    for target in label_keys:
+                        label_map[tokenizer.encode(target, add_special_tokens=False)[0]] = label_to_id[target]
+
+                    converted_target = label.clone()
+                    for key, val in label_map.items():
+                        converted_target[label == key] = val
+                    interest_index = list(label_map.keys())
+
+                    # sample from z. cmaes
+                    z = self.optimizer.ask()
+                    batch_size = input_ids.size(0)
+                    prefix_embedding = self.A * z # p_0 is none
+                    prefix = prefix_embedding.unsqueeze(0).repeat(batch_size, 1, 1) # 
+                    inputs_embeds = model.roberta.embeddings(input_ids)  # Assuming input_ids is not None
+                    inputs_embeds = torch.cat((prefix, inputs_embeds), dim=1)
+                    prefix_attention_mask = torch.ones((batch_size, self.prefix_length), dtype=torch.long, device=input_ids.device)
+                    attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
+
+                    # forward with the embedding layer. 
+                    sequence_output = model(inputs_embeds=inputs_embeds, attention_mask=attention_mask) # model.forward
+                    train_api_request.count += 1
+
+                    last_hidden_state = sequence_output[0].squeeze()
+                    logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
+                    logits = logits[:, interest_index]
+                    #pred = logits.argmax(dim=-1)
+
+                    if args.ce_loss:
+                        loss = ce_loss(logits.view(-1, config.num_labels), converted_target)
+                    else:
+                        loss = hingeloss(logits, converted_target)
+
+                    # cma-es
+                    solutions.append((z, loss))
+
+                    if train_api_request.count >= args.api_limit:
+                        raise ApiCallLimitError()
+
+                    self.completed_steps += 1
+                    if self.completed_steps >= args.max_client_train_steps:
+                        break
+                self.optimizer.tell(solutions)
+
+        except ApiCallLimitError:
+            pass
+        # return the trained parameter.
+
+        best_z = self.optimizer.best_solution
+        local_theta = best_z
+
+        return local_theta
+
+
 class ClientBDPL:
     def __init__(self, args, accelerator, client_partial_train_dataset, data_collator):
         # initialize prompt. 
@@ -606,7 +702,7 @@ class ClientBDPL:
     def get_len_dataset(self):
         return len(self.dataset)
 
-    def local_training(self, args, model, tokenizer, average_theta):
+    def local_training(self, args, model, tokenizer, average_theta, tracker):
 
         # Load the average prompt into the client's model
         self.prompts_probs.data = average_theta.clone().detach()
@@ -709,7 +805,7 @@ class ClientPromptTuning:
     def get_len_dataset(self):
         return len(self.dataset)
 
-    def local_training(self, args, model, tokenizer, average_theta):
+    def local_training(self, args, model, tokenizer, average_theta, tracker):
 
         original_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
         # model, assign the trainable parameter. 
@@ -1057,9 +1153,65 @@ def test(args, model, test_dataloader, metric, accelerator, epoch, results, prom
                     eval_key = 'Black_test_' + key + '_mm'
                     wandb.log({eval_key: test_metric_mm[key]})
 
+class CSV_log: 
+    def __init__(self, log_file_name):
+        self.log_file_name = log_file_name
+        self.field = ["epoch", "comp_time",
+                      'val_metric_1', 'val_metric_2',
+                      'FL_comm_cost_up', "FL_comm_cost_down", "FL_comm_cost", 'FL_query_times', 
+                      'LLM_comm_cost_up', "LLM_comm_cost_down", "LLM_comm_cost", 'LLM_query_times' ]
+        for e in self.field:
+            print(e, end=", ")
+        print()
+        if log_file_name == "TempResult":
+            with open(f"{log_file_name}.csv", 'w') as f:
+                write = csv.writer(f)
+                write.writerow(self.field)
+        else: 
+            with open(f"{log_file_name}.csv", 'x') as f:
+                write = csv.writer(f)
+                write.writerow(self.field)
+
+    def append_log(self, row):
+        with open(f"{self.log_file_name}.csv", 'a') as f:
+            write = csv.writer(f)
+            write.writerow(row)
+        for e in row:
+            print(e, end=", ")
+        print()
+
+class Tracker:
+    def __init__(self):
+        self.comp_time = 0
+        self.FL_comm_cost_up = 0
+        self.FL_comm_cost_down = 0
+        self.FL_query_times = 0
+        self.LLM_comm_cost_up = 0
+        self.LLM_comm_cost_down = 0
+        self.LLM_query_times = 0
+        
+    def start_comp_time_tracker(self):
+        self.start_time = time.time()
+    def stop_comp_time_tracker(self):
+        t = time.time() - self.start_time
+        self.comp_time += t
+        del self.start_time
+
+    def calculate_comm_size(self, x):
+        return x.element_size() * x.nelement() / 1048576
+
+    def FL_comm_cost(self):
+        return self.FL_comm_cost_up + self.FL_comm_cost_down
+    def LLM_comm_cost(self): 
+        return self.LLM_comm_cost_up + self.LLM_comm_cost_down 
+
 if __name__ == "__main__":
 
     args = parse_args()
+
+    # prepare log
+    csv_log = CSV_log(args.log_file_name)
+    tracker = Tracker()
 
     # 0 准备dataset。 
     info1, info2, info3, info4 = prepare_and_load_dataset(args)
@@ -1098,8 +1250,6 @@ if __name__ == "__main__":
         
     print(f"The prompt tuning method is: {args.prompt_tuning_method}")
 
-    
-
     # 1 分割 dataset. 按照样本id 平均分配。
     client_trainset_list = split_dataset_among_clients(train_dataset, args.num_clients, mode="random")
 
@@ -1108,12 +1258,13 @@ if __name__ == "__main__":
     for client_idx in range(args.num_clients):
         if args.prompt_tuning_method == "BDPL":
             client = ClientBDPL(args, accelerator, client_trainset_list[client_idx], data_collator)
+        elif args.prompt_tuning_method == "BBT":
+            client = ClientBBT(args, accelerator, model, client_trainset_list[client_idx], data_collator)
         elif args.prompt_tuning_method == "prompt-tuning":
             client = ClientPromptTuning(args, accelerator, model, client_trainset_list[client_idx], data_collator)
         elif args.prompt_tuning_method == "prefix-tuning":
             client = ClientPrefixTuning(args, accelerator, model, client_trainset_list[client_idx], data_collator)
         client_list.append(client) 
-    
 
     # 2 写 FL训练的框架。
     if args.prompt_tuning_method == "BDPL":
@@ -1125,17 +1276,24 @@ if __name__ == "__main__":
     
     # Start the training process. 
     for epoch in range(args.num_train_epochs):
+        tracker.start_comp_time_tracker()
         if args.FL_framework == "FedAvg":
             # training. 
             client_prompts_probs_list = []
             weight_list = []
             for client_idx in range(args.num_clients):
                 # Each client train and update.  
-                client_prompts_probs = client_list[client_idx].local_training(args, model, tokenizer, average_theta)
+                client_prompts_probs = client_list[client_idx].local_training(args, model, tokenizer, average_theta, tracker)
                 client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
                 # get the weight for averaging. 
                 weight = client_list[client_idx].get_len_dataset() /len_entire_train_dataset
                 weight_list.append(weight) #print("weight: \n", weight)
+
+                # calculate the FL communication 
+                tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
+                tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
+                tracker.FL_query_times += 1
+
             # Fed Average.
             average_theta = sum(weight * tensor for weight, tensor in zip(weight_list, client_prompts_probs_list)) 
             if args.prompt_tuning_method == "prompt-tuning":
@@ -1145,14 +1303,28 @@ if __name__ == "__main__":
 
         elif args.FL_framework == "FedSeq":
             for client_idx in range(args.num_clients):
-                average_theta = client_list[client_idx].local_training(args, model, tokenizer, average_theta)
+                average_theta = client_list[client_idx].local_training(args, model, tokenizer, average_theta, tracker)
                 if args.prompt_tuning_method == "prompt-tuning":
                     model.prompt_encoder.default.embedding.weight.data = average_theta
                 elif args.prompt_tuning_method == "prefix-tuning":
                     model.prefix_embeddings.data = average_theta 
 
+                # calculate the FL communication 
+                tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
+                tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
+                tracker.FL_query_times += 1
+
+        tracker.stop_comp_time_tracker()
+
         # Evaluation. 
         eval_result = evaluate(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
+        # 先简单测试一下。然后改进 client 类里面。
+        row =  [epoch, tracker.comp_time,
+                eval_result, 'val_metric_2',
+                tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 
+                'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", train_api_request.count ]
+        csv_log.append_log(row)
+
         #print(average_theta)
 
         if eval_result >= best_eval_result:
@@ -1168,5 +1340,9 @@ if __name__ == "__main__":
         model.prompt_encoder.default.embedding.weight.data = best_theta
 
     test(args, model, test_dataloader, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
-    print( f"The total API calls for training in all client is: {train_api_request.count}")
-    # train(args, accelerator, label_to_id, tokenizer, config, model, prompt_length, hingeloss, ce_loss, train_dataset, eval_dataset, test_dataset, data_collator )
+    # add the log for the final. 
+    row =  [epoch, tracker.comp_time,
+                eval_result, 'val_metric_2',
+                'FL_comm_cost_F', "FL_comm_cost_B", "FL_comm_cost", 'FL_query_times', 
+                'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", train_api_request.count ]
+    csv_log.append_log(row)
