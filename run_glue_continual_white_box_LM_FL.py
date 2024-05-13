@@ -593,7 +593,8 @@ class ClientBBT:
         self.embedding_dim = model.get_input_embeddings().embedding_dim
         self.D = args.prompt_length * self.embedding_dim # prompt space dimension. 
         self.A = torch.randn(self.D, self.d)  # the Mapping from low space to prompt space
-        self.optimizer = CMA(mean=torch.zeros(self.d), sigma=1.2)
+        self.sigma = 1.2
+        self.optimizer = CMA(mean=np.zeros(self.d), sigma=self.sigma)
 
         # FL parameter. 
         self.dataset = client_partial_train_dataset  # Local dataset for the client
@@ -607,6 +608,7 @@ class ClientBBT:
 
     def local_training(self, args, model, tokenizer, average_theta, tracker):
 
+        self.optimizer = CMA(mean=average_theta.detach().numpy(), sigma=self.sigma)
         # train with local data. 
         try:
             for step, batch in enumerate(self.train_dataloader):
@@ -637,9 +639,10 @@ class ClientBBT:
                     z = self.optimizer.ask()
                     batch_size = input_ids.size(0)
                     prefix_embedding = self.A * z # p_0 is none
-                    prefix = prefix_embedding.unsqueeze(0).repeat(batch_size, 1, 1) # 
+                    prefix = prefix_embedding.unsqueeze(0).repeat(batch_size, 1, 1).to(args.device) # 这里有问题。需要的是
+                    raise Exception()
                     inputs_embeds = model.roberta.embeddings(input_ids)  # Assuming input_ids is not None
-                    inputs_embeds = torch.cat((prefix, inputs_embeds), dim=1)
+                    inputs_embeds = torch.cat((prefix, inputs_embeds), dim=1)    
                     prefix_attention_mask = torch.ones((batch_size, self.prefix_length), dtype=torch.long, device=input_ids.device)
                     attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
 
@@ -1269,6 +1272,8 @@ if __name__ == "__main__":
     # 2 写 FL训练的框架。
     if args.prompt_tuning_method == "BDPL":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
+    elif args.prompt_tuning_method == "BBT":
+        average_theta = torch.zeros(client_list[0].d)
     elif args.prompt_tuning_method == "prompt-tuning":
         average_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
     elif args.prompt_tuning_method == "prefix-tuning":
@@ -1303,7 +1308,7 @@ if __name__ == "__main__":
 
         elif args.FL_framework == "FedSeq":
             for client_idx in range(args.num_clients):
-                average_theta = client_list[client_idx].local_training(args, model, tokenizer, average_theta, tracker)
+                average_theta = client_list[client_idx].local_training(args, model, tokenizer, average_theta, tracker) #avg
                 if args.prompt_tuning_method == "prompt-tuning":
                     model.prompt_encoder.default.embedding.weight.data = average_theta
                 elif args.prompt_tuning_method == "prefix-tuning":
