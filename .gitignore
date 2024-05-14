@@ -5,4 +5,5 @@ ExperimentResult/
 install.sh
 run.sh
 run_backup.sh
+run_FedSeq.sh
 TempResult.csv

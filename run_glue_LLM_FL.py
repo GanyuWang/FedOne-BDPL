@@ -86,6 +86,7 @@ def parse_args():
     # Federated learning
     parser.add_argument("--FL_framework", type=str, default="FedAvg", help="Which Federated Learning Framework: FedAvg, FedSeq")
     parser.add_argument("--num_clients", type=int, default=10 , help="The number of clients in FL.")
+    parser.add_argument("--num_activated_clients", type=int, default=10 , help="The number of activated clients in each epoch of FL.")
     parser.add_argument("--num_client_local_step", type=int, default=1000 , help="The number of clients' local update steps in FL.")
     parser.add_argument("--max_client_train_steps", type=int, default=8000, help="Total number of training steps to perform. If provided, overrides num_train_epochs.")
     # white box prompt tuning. 
@@ -197,7 +198,7 @@ if __name__ == "__main__":
             # training. 
             client_prompts_probs_list = []
             weight_list = []
-            for client_idx in range(args.num_clients):
+            for client_idx in random.sample(range(args.num_clients), args.num_activated_clients) :
                 # Each client train and update.  
                 client_prompts_probs = client_list[client_idx].local_training(args, model, tokenizer, average_theta, tracker)
                 client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
@@ -225,11 +226,11 @@ if __name__ == "__main__":
                 elif args.prompt_tuning_method == "prefix-tuning":
                     model.prefix_embeddings.data = average_theta
 
-
                 # calculate the FL communication 
                 tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
                 tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
                 tracker.FL_query_times += 1
+
 
         tracker.stop_comp_time_tracker()
 
