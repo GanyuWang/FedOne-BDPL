@@ -127,8 +127,8 @@ class ClientPrefixTuning:
             layer_params = {}
             for component_name, component in zip(['query', 'key', 'value'], [attention.query, attention.key, attention.value]):
                 layer_params[component_name] = {
-                    'weight': component.weight.clone().detach()[:args.prefix_length, :],
-                    'bias': component.bias.clone().detach()[:args.prefix_length]
+                    'original_weight': component.weight.clone().detach()[:args.prefix_length, :],
+                    'original_bias': component.bias.clone().detach()[:args.prefix_length]
                 }
             original_attention_params.append(layer_params)
 
@@ -182,16 +182,20 @@ class ClientPrefixTuning:
             except ApiCallLimitError:
                 pass
         # return the trained parameter.
-        local_theta = model.prefix_embeddings.clone().detach()
-        # Restore the model. 
-        model.prefix_embeddings.data = original_theta
         for layer, layer_params in zip(model.roberta.encoder.layer, original_attention_params):
             attention = layer.attention.self
-            for component_name, component in zip(['query', 'key', 'value'], [attention.query, attention.key, attention.value]):
-                component.weight.data[:args.prefix_length, :] = layer_params[component_name]['weight']
-                component.bias.data[:args.prefix_length] = layer_params[component_name]['bias']
+            updated_layer_params = {}
+        for component_name, component in zip(['query', 'key', 'value'], [attention.query, attention.key, attention.value]):
+                updated_layer_params[component_name] = {
+                    'updated_weight': component.weight.clone().detach()[:args.prefix_length, :],
+                    'updated_bias': component.bias.clone().detach()[:args.prefix_length]
+                }
+                # Restore original parameters
+                component.weight.data[:args.prefix_length, :] = layer_params[component_name]['original_weight']
+                component.bias.data[:args.prefix_length] = layer_params[component_name]['original_bias']
+        updated_params['attention_params'].append(updated_layer_params)
 
-        return local_theta
+        return updated_params
 
 
 
