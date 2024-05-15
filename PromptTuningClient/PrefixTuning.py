@@ -56,6 +56,10 @@ class PrefixTunedRoberta(nn.Module):
         elif args.file_name:
             self.label_to_id = LABEL2ID_CONFIG[args.file_name]
             
+        # has depenency outside. 
+        if self.label_to_id is not None:
+            self.config.label2id = self.label_to_id
+            self.config.id2label = {id: label for label, id in config.label2id.items()}
 
     def forward(self, input_ids=None, attention_mask=None, **kwargs):
         # Generate prefix for each batch
@@ -106,7 +110,7 @@ class ClientPrefixTuning:
     def get_len_dataset(self):
         return len(self.dataset)
 
-    def local_training(self, args, model, tokenizer, average_theta):
+    def local_training(self, args, model, tokenizer, average_theta, tracker):
 
         original_theta = model.prefix_embeddings.clone().detach()
         # model, assign the trainable parameter. 
@@ -141,7 +145,6 @@ class ClientPrefixTuning:
                     logits = logits[:, interest_index]
                     
                     #pred = logits.argmax(dim=-1)
-
                     if args.ce_loss:
                         loss = self.ce_loss(logits.view(-1, self.config.num_labels), converted_target)
                     else:
