@@ -11,7 +11,7 @@ python ./run_glue_LLM_FL.py \
 --api_limit 8000 --ce_loss True \
 --num_train_epochs 20 \
 --FL_framework FedAvg --num_clients 10 --num_activated_clients 1 --num_client_local_step 1 --max_client_train_steps 8000 \
---prompt_tuning_method BDPL \
+--prompt_tuning_method prefix-tuning \
 --log_file_name TempResult
 
 

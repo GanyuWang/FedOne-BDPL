@@ -28,7 +28,7 @@ from loss import *
 import wandb
 from peft import get_peft_config, get_peft_model,  TaskType, PeftType
 from peft import PromptTuningInit, PromptTuningConfig, PrefixTuningConfig, PromptEncoderConfig
-
+from PromptTuningClient.PrefixTuning import PrefixTunedRoberta
 
 
 
@@ -160,8 +160,7 @@ if __name__ == "__main__":
         # local trainable = average theta. 
         model = get_peft_model(model, peft_config)
     elif args.prompt_tuning_method == "prefix-tuning":
-        peft_config = PrefixTuningConfig(task_type="SEQ_CLS", num_virtual_tokens=20)
-        model = get_peft_model(model, peft_config)      
+        model = PrefixTunedRoberta(args, model, config, args.prompt_length).to(args.device)
     print(f"The prompt tuning method is: {args.prompt_tuning_method}")
 
     # 1 分割 dataset. 按照样本id 平均分配。
