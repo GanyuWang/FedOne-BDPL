@@ -37,6 +37,59 @@ import time
 
 logger = logging.getLogger(__name__)
 
+"""
+格式：
+updated_params = {
+    'prefix_embeddings': <tensor>,
+    'attention_params': [
+        {
+            'query': {
+                'updated_weight': <tensor>,  
+                'updated_bias': <tensor>   
+            },
+            'key': {
+                'updated_weight': <tensor>,  
+                'updated_bias': <tensor>    
+            },
+            'value': {
+                'updated_weight': <tensor>,  
+                'updated_bias': <tensor>    
+            }
+        },
+        # Similar structures for other layers...
+    ]
+}
+
+Example:
+    params1 = ModelParams(torch.rand(768), [{'query': {'updated_weight': torch.rand(768), 'updated_bias': torch.rand(768)}}])
+    params2 = ModelParams(torch.rand(768), [{'query': {'updated_weight': torch.rand(768), 'updated_bias': torch.rand(768)}}])
+
+    result = params1 + params2
+"""
+class ModelParams:
+    def __init__(self, prefix_embeddings, attention_params):
+        self.prefix_embeddings = prefix_embeddings
+        self.attention_params = attention_params
+
+    def __add__(self, other):
+        if not isinstance(other, ModelParams):
+            raise ValueError("Can only add ModelParams with ModelParams")
+        
+        # Add prefix embeddings
+        new_prefix_embeddings = self.prefix_embeddings + other.prefix_embeddings
+        
+        # Add attention parameters
+        new_attention_params = []
+        for self_layer, other_layer in zip(self.attention_params, other.attention_params):
+            layer = {}
+            for key in self_layer:
+                layer[key] = {
+                    'weight': self_layer[key]['weight'] + other_layer[key]['weight'],
+                    'bias': self_layer[key]['bias'] + other_layer[key]['bias']
+                }
+            new_attention_params.append(layer)
+        
+        return ModelParams(new_prefix_embeddings, new_attention_params)
 
 class PrefixTunedRoberta(nn.Module):
     def __init__(self, args, model, config, prefix_length=10):
@@ -49,11 +102,21 @@ class PrefixTunedRoberta(nn.Module):
         for param in self.model.parameters():
             param.requires_grad = False
 
+        attention_params = []
         for layer in self.model.roberta.encoder.layer:
-            attention = layer.attention.self            
-            for component in [attention.query, attention.key, attention.value]:
+            attention = layer.attention.self
+            layer_params = {}
+            for component_name, component in zip(['query', 'key', 'value'], [attention.query, attention.key, attention.value]):
+                # Enable training only for the specified prefix length
                 component.weight[:prefix_length, :].requires_grad = True
                 component.bias[:prefix_length].requires_grad = True
+                    # Store the initial state of trainable parameters
+                layer_params[component_name] = {
+                    'weight': component.weight[:prefix_length, :],
+                    'bias': component.bias[:prefix_length]
+                }
+            attention_params.append(layer_params)
+            self.trainable_params = ModelParams(self.prefix_embeddings, attention_params)
 
         # label to id
         self.label_to_id = None
@@ -61,7 +124,7 @@ class PrefixTunedRoberta(nn.Module):
             self.label_to_id = LABEL2ID_CONFIG[args.task_name]
         elif args.file_name:
             self.label_to_id = LABEL2ID_CONFIG[args.file_name]
-            
+                
         # has depenency outside. 
         if self.label_to_id is not None:
             self.config.label2id = self.label_to_id
@@ -118,19 +181,14 @@ class ClientPrefixTuning:
 
     def local_training(self, args, model, tokenizer, average_theta, tracker):
 
-        original_theta = model.prefix_embeddings.clone().detach()
-
-        original_attention_params = []
-
-        for layer in model.roberta.encoder.layer:
-            attention = layer.attention.self
-            layer_params = {}
-            for component_name, component in zip(['query', 'key', 'value'], [attention.query, attention.key, attention.value]):
-                layer_params[component_name] = {
-                    'original_weight': component.weight.clone().detach()[:args.prefix_length, :],
-                    'original_bias': component.bias.clone().detach()[:args.prefix_length]
-                }
-            original_attention_params.append(layer_params)
+        # Backup the original trainable parameters
+        original_params = ModelParams(model.prefix_embeddings.clone().detach(),
+                                  [{component_name: {
+                                      'weight': getattr(attention, component_name).weight.clone().detach()[:args.prefix_length, :],
+                                      'bias': getattr(attention, component_name).bias.clone().detach()[:args.prefix_length]
+                                    } for component_name in ['query', 'key', 'value']}
+                                   for layer in model.roberta.encoder.layer
+                                   for attention in [layer.attention.self]])
 
         # model, assign the trainable parameter. 
         # train with local data. 
@@ -182,18 +240,23 @@ class ClientPrefixTuning:
             except ApiCallLimitError:
                 pass
         # return the trained parameter.
-        for layer, layer_params in zip(model.roberta.encoder.layer, original_attention_params):
+
+        # Collect the updated parameters
+        updated_params = ModelParams(model.prefix_embeddings.clone().detach(),
+                                    [{component_name: {
+                                        'weight': getattr(attention, component_name).weight.clone().detach()[:args.prefix_length, :],
+                                        'bias': getattr(attention, component_name).bias.clone().detach()[:args.prefix_length]
+                                    } for component_name in ['query', 'key', 'value']}
+                                    for layer in model.roberta.encoder.layer
+                                    for attention in [layer.attention.self]])
+
+        # Restore original parameters from backup
+        model.prefix_embeddings.data = original_params.prefix_embeddings
+        for layer, orig_layer_params in zip(model.roberta.encoder.layer, original_params.attention_params):
             attention = layer.attention.self
-            updated_layer_params = {}
-        for component_name, component in zip(['query', 'key', 'value'], [attention.query, attention.key, attention.value]):
-                updated_layer_params[component_name] = {
-                    'updated_weight': component.weight.clone().detach()[:args.prefix_length, :],
-                    'updated_bias': component.bias.clone().detach()[:args.prefix_length]
-                }
-                # Restore original parameters
-                component.weight.data[:args.prefix_length, :] = layer_params[component_name]['original_weight']
-                component.bias.data[:args.prefix_length] = layer_params[component_name]['original_bias']
-        updated_params['attention_params'].append(updated_layer_params)
+            for component_name in ['query', 'key', 'value']:
+                getattr(attention, component_name).weight.data[:args.prefix_length, :] = orig_layer_params[component_name]['weight']
+                getattr(attention, component_name).bias.data[:args.prefix_length] = orig_layer_params[component_name]['bias']
 
         return updated_params
 

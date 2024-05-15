@@ -187,7 +187,7 @@ if __name__ == "__main__":
     elif args.prompt_tuning_method == "prompt-tuning":
         average_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
     elif args.prompt_tuning_method == "prefix-tuning":
-        average_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
+        average_theta = model.trainable_params.clone().detach()
     
     # Start the training process. 
     for epoch in range(args.num_train_epochs):
@@ -215,7 +215,7 @@ if __name__ == "__main__":
             if args.prompt_tuning_method == "prompt-tuning":
                 model.prompt_encoder.default.embedding.weight.data = average_theta
             elif args.prompt_tuning_method == "prefix-tuning":
-                model.prompt_encoder.default.embedding.weight.data = average_theta 
+                model.trainable_params.data = average_theta 
 
         elif args.FL_framework == "FedSeq":
             for client_idx in range(args.num_clients):
@@ -223,7 +223,7 @@ if __name__ == "__main__":
                 if args.prompt_tuning_method == "prompt-tuning":
                     model.prompt_encoder.default.embedding.weight.data = average_theta
                 elif args.prompt_tuning_method == "prefix-tuning":
-                    model.prompt_encoder.default.embedding.weight.data = average_theta
+                    model.trainable_params.data = average_theta
 
                 # calculate the FL communication 
                 tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
