@@ -49,13 +49,8 @@ class PrefixTunedRoberta(nn.Module):
         for param in self.model.parameters():
             param.requires_grad = False
 
-        # Iterate over all encoder layers
         for layer in self.model.roberta.encoder.layer:
-            # Access the attention module of each layer
-            attention = layer.attention.self
-            
-            # Make the first 'prefix_length' rows of the weights and the first 'prefix_length' elements of the biases trainable
-            # for 'query', 'key', and 'value' in each attention layer
+            attention = layer.attention.self            
             for component in [attention.query, attention.key, attention.value]:
                 component.weight[:prefix_length, :].requires_grad = True
                 component.bias[:prefix_length].requires_grad = True
@@ -124,6 +119,19 @@ class ClientPrefixTuning:
     def local_training(self, args, model, tokenizer, average_theta, tracker):
 
         original_theta = model.prefix_embeddings.clone().detach()
+
+        original_attention_params = []
+
+        for layer in model.roberta.encoder.layer:
+            attention = layer.attention.self
+            layer_params = {}
+            for component_name, component in zip(['query', 'key', 'value'], [attention.query, attention.key, attention.value]):
+                layer_params[component_name] = {
+                    'weight': component.weight.clone().detach()[:args.prefix_length, :],
+                    'bias': component.bias.clone().detach()[:args.prefix_length]
+                }
+            original_attention_params.append(layer_params)
+
         # model, assign the trainable parameter. 
         # train with local data. 
         for _ in range(self.num_local_step):
@@ -177,6 +185,12 @@ class ClientPrefixTuning:
         local_theta = model.prefix_embeddings.clone().detach()
         # Restore the model. 
         model.prefix_embeddings.data = original_theta
+        for layer, layer_params in zip(model.roberta.encoder.layer, original_attention_params):
+            attention = layer.attention.self
+            for component_name, component in zip(['query', 'key', 'value'], [attention.query, attention.key, attention.value]):
+                component.weight.data[:args.prefix_length, :] = layer_params[component_name]['weight']
+                component.bias.data[:args.prefix_length] = layer_params[component_name]['bias']
+
         return local_theta
 
 
