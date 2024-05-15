@@ -49,6 +49,12 @@ class PrefixTunedRoberta(nn.Module):
         for param in self.model.parameters():
             param.requires_grad = False
 
+        for layer in self.model.roberta.encoder.layer:
+            attention = layer.attention.self            
+            for component in [attention.query, attention.key, attention.value]:
+                component.weight[:prefix_length, :].requires_grad = True
+                component.bias[:prefix_length].requires_grad = True
+
         # label to id
         self.label_to_id = None
         if args.task_name:
@@ -115,7 +121,6 @@ class ClientPrefixTuning:
         original_theta = model.prefix_embeddings.clone().detach()
 
         original_attention_params = []
-        
 
         for layer in model.roberta.encoder.layer:
             attention = layer.attention.self
@@ -177,9 +182,15 @@ class ClientPrefixTuning:
             except ApiCallLimitError:
                 pass
         # return the trained parameter.
-        local_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
+        local_theta = model.prefix_embeddings.clone().detach()
         # Restore the model. 
         model.prefix_embeddings.data = original_theta
+        for layer, layer_params in zip(model.roberta.encoder.layer, original_attention_params):
+            attention = layer.attention.self
+            for component_name, component in zip(['query', 'key', 'value'], [attention.query, attention.key, attention.value]):
+                component.weight.data[:args.prefix_length, :] = layer_params[component_name]['weight']
+                component.bias.data[:args.prefix_length] = layer_params[component_name]['bias']
+
         return local_theta
 
 
