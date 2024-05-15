@@ -43,7 +43,7 @@ from preprocess import prepare_and_load_dataset, train_api_request, split_datase
 
 from PromptTuningClient.BBT import ClientBBT
 from PromptTuningClient.BDPL import ClientBDPL, evaluateBDPL, testBDPL
-from PromptTuningClient.PrefixTuning import PrefixTunedRoberta, ClientPrefixTuning, evaluatePrefixTuning, testPrefixTuning
+from PromptTuningClient.PrefixTuning import ClientPrefixTuning, evaluatePrefixTuning, testPrefixTuning
 from PromptTuningClient.PromptTuning import ClientPromptTuning, evaluatePromptTuning, testPromptTuning
 
 
@@ -160,9 +160,8 @@ if __name__ == "__main__":
         # local trainable = average theta. 
         model = get_peft_model(model, peft_config)
     elif args.prompt_tuning_method == "prefix-tuning":
-        #prefix_config = RobertaConfig.from_pretrained(args.model_name_or_path)
-        model = PrefixTunedRoberta(args, model, config, args.prompt_length).to(args.device)
-        
+        peft_config = PrefixTuningConfig(task_type="SEQ_CLS", num_virtual_tokens=20)
+        model = get_peft_model(model, peft_config)      
     print(f"The prompt tuning method is: {args.prompt_tuning_method}")
 
     # 1 分割 dataset. 按照样本id 平均分配。
@@ -189,7 +188,7 @@ if __name__ == "__main__":
     elif args.prompt_tuning_method == "prompt-tuning":
         average_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
     elif args.prompt_tuning_method == "prefix-tuning":
-        average_theta = model.prefix_embeddings.clone().detach()
+        average_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
     
     # Start the training process. 
     for epoch in range(args.num_train_epochs):
@@ -217,7 +216,7 @@ if __name__ == "__main__":
             if args.prompt_tuning_method == "prompt-tuning":
                 model.prompt_encoder.default.embedding.weight.data = average_theta
             elif args.prompt_tuning_method == "prefix-tuning":
-                model.prefix_embeddings.data = average_theta 
+                model.prompt_encoder.default.embedding.weight.data = average_theta 
 
         elif args.FL_framework == "FedSeq":
             for client_idx in range(args.num_clients):
@@ -225,7 +224,7 @@ if __name__ == "__main__":
                 if args.prompt_tuning_method == "prompt-tuning":
                     model.prompt_encoder.default.embedding.weight.data = average_theta
                 elif args.prompt_tuning_method == "prefix-tuning":
-                    model.prefix_embeddings.data = average_theta
+                    model.prompt_encoder.default.embedding.weight.data = average_theta
 
                 # calculate the FL communication 
                 tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
