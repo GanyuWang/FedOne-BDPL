@@ -37,6 +37,51 @@ import time
 
 logger = logging.getLogger(__name__)
 
+
+class PrefixTunedRoberta(nn.Module):
+    def __init__(self, args, model, config, prefix_length=10):
+        super().__init__()
+        self.config = config
+        self.prefix_length = prefix_length
+        self.prefix_embeddings = nn.Parameter(torch.randn(prefix_length, config.hidden_size))
+        self.model = model
+        # Freeze all parameters in the base model
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        # label to id
+        self.label_to_id = None
+        if args.task_name:
+            self.label_to_id = LABEL2ID_CONFIG[args.task_name]
+        elif args.file_name:
+            self.label_to_id = LABEL2ID_CONFIG[args.file_name]
+            
+        # has depenency outside. 
+        if self.label_to_id is not None:
+            self.config.label2id = self.label_to_id
+            self.config.id2label = {id: label for label, id in config.label2id.items()}
+
+    def forward(self, input_ids=None, attention_mask=None, **kwargs):
+        # Generate prefix for each batch
+        batch_size = input_ids.size(0)
+
+        prefix = self.prefix_embeddings.unsqueeze(0).repeat(batch_size, 1, 1)  # Shape: [batch_size, prefix_length, hidden_size]
+
+        # Get embeddings from original model
+        inputs_embeds = self.model.roberta.embeddings(input_ids)  # Assuming input_ids is not None
+
+        # Concatenate prefix embeddings
+        inputs_embeds = torch.cat((prefix, inputs_embeds), dim=1)
+
+        # Adjust attention mask for the prefix
+        if attention_mask is not None:
+            prefix_attention_mask = torch.ones((batch_size, self.prefix_length), dtype=torch.long, device=input_ids.device)
+            attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
+
+        # Pass to the original model's forward method
+        output = self.model.forward(inputs_embeds=inputs_embeds, attention_mask=attention_mask, **kwargs)
+        return output
+
 class ClientPrefixTuning:
     def __init__(self, args, accelerator, model, client_partial_train_dataset, data_collator, config):
 
@@ -67,7 +112,7 @@ class ClientPrefixTuning:
 
     def local_training(self, args, model, tokenizer, average_theta, tracker):
 
-        original_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
+        original_theta = model.prefix_embeddings.clone().detach()
         # model, assign the trainable parameter. 
         # train with local data. 
         for _ in range(self.num_local_step):
@@ -120,7 +165,7 @@ class ClientPrefixTuning:
         # return the trained parameter.
         local_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
         # Restore the model. 
-        model.prompt_encoder.default.embedding.weight.data = original_theta
+        model.prefix_embeddings.data = original_theta
         return local_theta
 
 
