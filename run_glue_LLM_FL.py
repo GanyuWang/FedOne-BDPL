@@ -175,10 +175,10 @@ if __name__ == "__main__":
             client = ClientBBT(args, accelerator, model, client_trainset_list[client_idx], data_collator, config)
         elif args.prompt_tuning_method == "BDPL":
             client = ClientBDPL(args, accelerator, client_trainset_list[client_idx], data_collator, config, ngram_list)
-        elif args.prompt_tuning_method == "prefix-tuning":
-            client = ClientPrefixTuning(args, accelerator, model, client_trainset_list[client_idx], data_collator, config)
         elif args.prompt_tuning_method == "prompt-tuning":
-            client = ClientPromptTuning(args, accelerator, model, client_trainset_list[client_idx], data_collator, config)
+            client = ClientPromptTuning(args, accelerator, model, client_trainset_list[client_idx], data_collator, config, ngram_list)
+        elif args.prompt_tuning_method == "prefix-tuning":
+            client = ClientPrefixTuning(args, accelerator, model, client_trainset_list[client_idx], data_collator, config, ngram_list)
         client_list.append(client) 
 
     # 2 写 FL训练的框架。
