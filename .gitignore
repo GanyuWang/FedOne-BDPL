@@ -6,4 +6,6 @@ install.sh
 run.sh
 run_backup.sh
 run_FedSeq.sh
+run_FedAvg.sh
 TempResult.csv
+.nfs00000000043a5ee90000000f

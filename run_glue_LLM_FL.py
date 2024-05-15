@@ -92,7 +92,7 @@ def parse_args():
     # white box prompt tuning. 
     parser.add_argument("--prompt_tuning_method", type=str, default="BDPL", help="Which white-box tuning method:BBT, BDPL, prefix-tuning, prompt-tuning, " )
     # log file. 
-    parser.add_argument("--log_file_name", type=str, default="BDPL", help="log file path." )
+    parser.add_argument("--log_file_name", type=str, default="TempResult", help="log file path." )
     args = parser.parse_args()
 
     args.train_file = './dataset/' + args.file_name + '/train.csv' if args.file_name else None
@@ -197,14 +197,14 @@ if __name__ == "__main__":
         if args.FL_framework == "FedAvg":
             # training. 
             client_prompts_probs_list = []
-            weight_list = []
+            client_dataset_len_list = []
             for client_idx in random.sample(range(args.num_clients), args.num_activated_clients) :
                 # Each client train and update.  
                 client_prompts_probs = client_list[client_idx].local_training(args, model, tokenizer, average_theta, tracker)
                 client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
                 # get the weight for averaging. 
-                weight = client_list[client_idx].get_len_dataset() /len_entire_train_dataset
-                weight_list.append(weight) #print("weight: \n", weight)
+                client_dataset_len_nk = client_list[client_idx].get_len_dataset()
+                client_dataset_len_list.append(client_dataset_len_nk) #print("weight: \n", weight)
 
                 # calculate the FL communication 
                 tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
@@ -212,7 +212,8 @@ if __name__ == "__main__":
                 tracker.FL_query_times += 1
 
             # Fed Average.
-            average_theta = sum(weight * tensor for weight, tensor in zip(weight_list, client_prompts_probs_list)) 
+            sampled_client_dataset_len_sum_mt = sum(client_dataset_len_list) 
+            average_theta = sum(nk/sampled_client_dataset_len_sum_mt * tensor for nk, tensor in zip(client_dataset_len_list, client_prompts_probs_list)) 
             if args.prompt_tuning_method == "prompt-tuning":
                 model.prompt_encoder.default.embedding.weight.data = average_theta
             elif args.prompt_tuning_method == "prefix-tuning":

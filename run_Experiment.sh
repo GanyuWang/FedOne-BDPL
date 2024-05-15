@@ -1,6 +1,7 @@
 # RoBERTa-based experiments
-python ./run_glue_discrete_LM_FL.py \
+python ./run_glue_LLM_FL.py \
 --task_name=mrpc \
+--model_name_or_path roberta-base \
 --per_device_train_batch_size 128 \
 --per_device_eval_batch_size 16 \
 --weight_decay=0.1 --seed=42 \
@@ -8,10 +9,10 @@ python ./run_glue_discrete_LM_FL.py \
 --sample_size 20 --prompt_length 10 \
 --prompt_search_space 200 \
 --api_limit 8000 --ce_loss True \
---num_train_epochs 5 \
---FL_framework FedAvg \
---num_clients 100 --num_client_local_step 1 --max_client_train_steps 8000 \
-
+--num_train_epochs 20 \
+--FL_framework FedAvg --num_clients 10 --num_activated_clients 1 --num_client_local_step 1 --max_client_train_steps 8000 \
+--prompt_tuning_method BDPL \
+--log_file_name TempResult 
 
 # # GPT-based experiments
 # python ./run_glue_discrete_GPT.py \

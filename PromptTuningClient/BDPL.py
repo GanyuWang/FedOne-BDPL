@@ -110,6 +110,7 @@ class ClientBDPL:
                             mask_pos = np.where(np.array(cur_input_ids.cpu()) == tokenizer.mask_token_id)     # 找到 mask position. 
                             mask_pos = torch.tensor(mask_pos[-1]) 
                             sequence_output = train_api_request(model, input_ids=cur_input_ids, attention_mask=cur_attention_mask)
+
                             last_hidden_state = sequence_output[0].squeeze()
                             logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
 
