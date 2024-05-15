@@ -113,6 +113,20 @@ class ClientPrefixTuning:
     def local_training(self, args, model, tokenizer, average_theta, tracker):
 
         original_theta = model.prefix_embeddings.clone().detach()
+
+        original_attention_params = []
+        
+
+        for layer in model.roberta.encoder.layer:
+            attention = layer.attention.self
+            layer_params = {}
+            for component_name, component in zip(['query', 'key', 'value'], [attention.query, attention.key, attention.value]):
+                layer_params[component_name] = {
+                    'weight': component.weight.clone().detach()[:args.prefix_length, :],
+                    'bias': component.bias.clone().detach()[:args.prefix_length]
+                }
+            original_attention_params.append(layer_params)
+
         # model, assign the trainable parameter. 
         # train with local data. 
         for _ in range(self.num_local_step):
