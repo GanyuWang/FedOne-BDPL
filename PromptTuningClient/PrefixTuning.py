@@ -49,6 +49,17 @@ class PrefixTunedRoberta(nn.Module):
         for param in self.model.parameters():
             param.requires_grad = False
 
+        # Iterate over all encoder layers
+        for layer in self.model.roberta.encoder.layer:
+            # Access the attention module of each layer
+            attention = layer.attention.self
+            
+            # Make the first 'prefix_length' rows of the weights and the first 'prefix_length' elements of the biases trainable
+            # for 'query', 'key', and 'value' in each attention layer
+            for component in [attention.query, attention.key, attention.value]:
+                component.weight[:prefix_length, :].requires_grad = True
+                component.bias[:prefix_length].requires_grad = True
+
         # label to id
         self.label_to_id = None
         if args.task_name:
