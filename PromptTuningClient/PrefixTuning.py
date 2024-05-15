@@ -121,6 +121,7 @@ class ClientPrefixTuning:
         original_theta = model.prefix_embeddings.clone().detach()
 
         original_attention_params = []
+        
 
         for layer in model.roberta.encoder.layer:
             attention = layer.attention.self
