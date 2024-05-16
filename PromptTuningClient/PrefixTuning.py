@@ -90,6 +90,51 @@ class ModelParams:
             new_attention_params.append(layer)
         
         return ModelParams(new_prefix_embeddings, new_attention_params)
+    
+    def __mul__(self, scalar):
+        if not isinstance(scalar, (int, float)):
+            raise ValueError("Can only multiply ModelParams by an integer or a float")
+        
+        # Multiply prefix embeddings by scalar
+        new_prefix_embeddings = self.prefix_embeddings * scalar
+        
+        # Multiply attention parameters by scalar
+        new_attention_params = []
+        for layer in self.attention_params:
+            new_layer = {}
+            for key in layer:
+                new_layer[key] = {
+                    'weight': layer[key]['weight'] * scalar,
+                    'bias': layer[key]['bias'] * scalar
+                }
+            new_attention_params.append(new_layer)
+        
+        return ModelParams(new_prefix_embeddings, new_attention_params)
+    
+    def size(self):
+        sizes = {'prefix_embeddings': self.prefix_embeddings.size()}
+        
+        attention_sizes = {}
+        for i, layer in enumerate(self.attention_params):
+            layer_sizes = {}
+            for key, param in layer.items():
+                layer_sizes[key] = param.size()
+            attention_sizes[f'Layer {i}'] = layer_sizes
+        
+        sizes['attention_params'] = attention_sizes
+        return sizes
+
+    def nelement(self):
+        # Get total number of elements in prefix_embeddings
+        total_elements = self.prefix_embeddings.nelement()
+        
+        # Get total number of elements in all weights and biases in attention_params
+        for layer in self.attention_params:
+            for param in layer.values():
+                total_elements += param.nelement()
+        
+        return total_elements
+    
 
 class PrefixTunedRoberta(nn.Module):
     def __init__(self, args, model, config, prefix_length=10):
