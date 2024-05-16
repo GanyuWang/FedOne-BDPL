@@ -108,17 +108,8 @@ class ModelParams:
         return ModelParams(new_prefix_embeddings, new_attention_params)
     
     def element_size(self):
-        sizes = {'prefix_embeddings': self.prefix_embeddings.size()}
-        
-        attention_sizes = {}
-        for i, layer in enumerate(self.attention_params):
-            layer_sizes = {}
-            for key, param in layer.items():
-                layer_sizes[key] = param.size()
-            attention_sizes[f'Layer {i}'] = layer_sizes
-        
-        sizes['attention_params'] = attention_sizes
-        return sizes
+        # Call element_size() on the prefix_embeddings tensor
+        return self.prefix_embeddings.element_size()
 
     def nelement(self):
         # Get total number of elements in prefix_embeddings
