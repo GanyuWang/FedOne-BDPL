@@ -43,13 +43,17 @@ updated_params = {
     'prefix_embeddings': <tensor>,
     'attention_params': [
         {
+            'query': {
+                'weight': <tensor>,  # Tensor with updated weights for the query in layer 0
+                'bias': <tensor>     # Tensor with updated biases for the query in layer 0
+            },
             'key': {
-                'updated_weight': <tensor>,  
-                'updated_bias': <tensor>    
+                'weight': <tensor>,  
+                'bias': <tensor>    
             },
             'value': {
-                'updated_weight': <tensor>,  
-                'updated_bias': <tensor>    
+                'weight': <tensor>,  
+                'bias': <tensor>    
             }
         },
         # Similar structures for other layers...
@@ -87,6 +91,13 @@ class ModelParams:
         
         return ModelParams(new_prefix_embeddings, new_attention_params)
     
+    def __radd__(self, other):
+        # 允许 0 与 ModelParams 相加
+        if other == 0:
+            return self
+        else:
+            return self.__add__(other)
+    
     def __mul__(self, scalar):
         if not isinstance(scalar, (int, float)):
             raise ValueError("Can only multiply ModelParams by an integer or a float")
@@ -107,6 +118,10 @@ class ModelParams:
         
         return ModelParams(new_prefix_embeddings, new_attention_params)
     
+    def __rmul__(self, scalar):
+        # This method handles multiplication when the scalar is on the left
+        return self.__mul__(scalar)
+
     def element_size(self):
         # Call element_size() on the prefix_embeddings tensor
         return self.prefix_embeddings.element_size()
@@ -118,8 +133,8 @@ class ModelParams:
         # Get total number of elements in all weights and biases in attention_params
         for layer in self.attention_params:
             for param in layer.values():
-                total_elements += param.nelement()
-        
+                for x in param.values():
+                    total_elements += x.nelement()       
         return total_elements
     
     def clone(self):
@@ -325,7 +340,6 @@ class ClientPrefixTuning:
                 getattr(attention, component_name).bias.data[:model.prefix_length] = orig_layer_params[component_name]['bias']
 
         return updated_params
-
 
 
 def evaluatePrefixTuning(args,  model, eval_dataloader, metric, ce_loss,config, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None):
