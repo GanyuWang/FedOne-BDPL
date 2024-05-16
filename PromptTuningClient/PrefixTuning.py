@@ -107,7 +107,7 @@ class ModelParams:
         
         return ModelParams(new_prefix_embeddings, new_attention_params)
     
-    def size(self):
+    def element_size(self):
         sizes = {'prefix_embeddings': self.prefix_embeddings.size()}
         
         attention_sizes = {}
