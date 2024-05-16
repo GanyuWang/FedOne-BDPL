@@ -43,10 +43,6 @@ updated_params = {
     'prefix_embeddings': <tensor>,
     'attention_params': [
         {
-            'query': {
-                'updated_weight': <tensor>,  
-                'updated_bias': <tensor>   
-            },
             'key': {
                 'updated_weight': <tensor>,  
                 'updated_bias': <tensor>    
