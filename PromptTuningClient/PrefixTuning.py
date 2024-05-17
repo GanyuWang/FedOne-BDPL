@@ -342,6 +342,53 @@ class ClientPrefixTuning:
         return updated_params
 
 
+def evaluatePrefixTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, results):
+    model.eval()
+    with torch.no_grad():
+        for step, batch in enumerate(eval_dataloader):
+            if args.trial and step >= 100:
+                break
+
+            input_ids = batch['input_ids'].to(args.device)
+            attention_mask = batch['attention_mask'].to(args.device)
+            labels = batch['labels'].to(args.device)
+
+            batch_size, seq_length = input_ids.size()
+            prefix = model.prefix_embeddings.unsqueeze(0).repeat(batch_size, 1, 1)
+            extended_attention_mask = torch.cat([torch.ones(batch_size, model.prefix_length, dtype=torch.long, device=args.device), attention_mask], dim=1)
+
+            inputs_embeds = model.model.roberta.embeddings(input_ids)
+            inputs_embeds = torch.cat([prefix, inputs_embeds], dim=1)
+
+            outputs = model(inputs_embeds=inputs_embeds, attention_mask=extended_attention_mask)
+            logits = outputs.logits  
+
+            eval_loss = ce_loss(logits.view(-1, config.num_labels), labels.view(-1))
+            predictions = logits.argmax(dim=-1)
+
+            metric.add_batch(predictions=accelerator.gather(predictions), references=accelerator.gather(labels))
+
+        if args.file_name in DOMAIN_DATASET:
+            eval_metric = metric.compute(average='macro')
+        else:
+            eval_metric = metric.compute()
+
+        logger.info("** eval **")
+        logger.info(f"epoch {epoch}: {eval_metric}")
+
+        if args.task_name == 'cola':
+            key = 'matthews_correlation'
+        elif args.task_name in ['mnli', 'sst2', 'wnli', 'rte', 'qnli'] or args.file_name in ['MR', 'CR']:
+            key = 'accuracy'
+        else:
+            key = 'f1'
+
+        eval_result = eval_metric[key]
+        results.append(eval_result)
+
+    return eval_result
+
+
 def evaluatePrefixTuning(args,  model, eval_dataloader, metric, ce_loss,config, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None):
     prompts_discrete_indices = prompts_probs.argmax(1)
 
