@@ -360,88 +360,74 @@ class ClientPrefixTuning:
         return updated_params
 
 
-def evaluatePrefixTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, results, prompts_probs=None, tokenizer=None):
-    model.eval()
+def evaluatePrefixTuning(args,  model, eval_dataloader, metric, ce_loss,config, accelerator, epoch, results, prompts_probs=None,tokenizer=None):
+
     model.trainable_params.copy_from(prompts_probs)
-    with torch.no_grad():
-        for step, batch in enumerate(eval_dataloader):
-            if args.trial and step >= 100:
-                break
+    for step, batch in enumerate(eval_dataloader):
+        if args.trial and step >= 100:
+            break
+        bsz = len(batch['input_ids'])
 
-            input_ids = batch['input_ids']
-            attention_mask = batch["attention_mask"]
-            # Find the maks position. 
-            # bsz = len(batch['input_ids'])
-            mask_pos = np.where(np.array(input_ids.cpu()) == tokenizer.mask_token_id)     # 找到 mask position. 
-            mask_pos = torch.tensor(mask_pos[-1]) 
-                    
-            # label and convert to target. 
-            label = batch["labels"]
-            label_keys = list(model.label_to_id.keys())
-            label_map = {}
-            for target in label_keys:
-                label_map[tokenizer.encode(target, add_special_tokens=False)[0]] = model.label_to_id[target]
+        mask_pos=np.where(np.array(batch['input_ids'].cpu()) == tokenizer.mask_token_id) 
+        mask_pos = torch.tensor(mask_pos[-1]) + args.prompt_length
+        label_to_id = model.config.label2id 
 
-                converted_target = label.clone()
-                for key, val in label_map.items():
-                    converted_target[label == key] = val
-                interest_index = list(label_map.keys())
+        sequence_output = model(input_ids=batch['input_ids'], attention_mask=batch["attention_mask"])
+        last_hidden_state = sequence_output[0].squeeze()
+        logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
+        
 
-                sequence_output = train_api_request(model, input_ids=input_ids, attention_mask=attention_mask) #
-                last_hidden_state = sequence_output[0].squeeze()
-                    
-                logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
-                logits = logits[:, interest_index]
-                predictions = logits.argmax(dim=-1) 
+        label = batch["labels"].to(args.device)
+        label_keys = list(label_to_id.keys())
+        label_map = {}
+        for target in label_keys:
+            label_map[tokenizer.encode(target, add_special_tokens=False)[0]] = label_to_id[target]
+        converted_target = label.clone()
+        for key, val in label_map.items():
+            converted_target[label == key] = val
+        interest_index = list(label_map.keys())
+        logits = logits[:, interest_index]
 
-            metric.add_batch(predictions=accelerator.gather(predictions), references=accelerator.gather(label))
+        eval_loss_c = ce_loss(logits.view(-1, config.num_labels), converted_target)
+        predictions = logits.argmax(dim=-1)
 
-        if args.file_name in DOMAIN_DATASET:
-            eval_metric = metric.compute(average='macro')
-        else:
-            eval_metric = metric.compute()
+        metric.add_batch(
+            predictions=accelerator.gather(predictions),
+            references=accelerator.gather(converted_target),
+        )
 
-        logger.info("** eval **")
-        logger.info(f"epoch {epoch}: {eval_metric}")
+    if args.file_name in DOMAIN_DATASET:
+        eval_metric = metric.compute(average='macro')
+    else:
+        eval_metric = metric.compute()
 
-        if args.task_name == 'cola':
-            key = 'matthews_correlation'
-        elif args.task_name in ['mnli', 'sst2', 'wnli', 'rte', 'qnli'] or args.file_name in ['MR', 'CR']:
-            key = 'accuracy'
-        else:
-            key = 'f1'
+    logger.info("** eval **")
+    logger.info(f"epoch {epoch}: {eval_metric}")
 
-        eval_result = eval_metric[key]
-        results.append(eval_result)
+    if args.task_name == 'cola':
+        key = 'matthews_correlation'
+    elif args.task_name in ['mnli', 'sst2', 'wnli', 'rte', 'qnli'] or args.file_name in ['MR', 'CR']:
+        key = 'accuracy'
+    else:
+        key = 'f1'
+
+    eval_result = eval_metric[key]
+    results.append(eval_result)
 
     return eval_result
 
+
 def testPrefixTuning(args, model, test_dataloader, metric, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None, tokenizer=None, test_dataloader_mm=None):
     if args.task_name == None or args.k_shot >= 0:
-        prompts_discrete_indices = prompts_probs.argmax(1)
-        #raise Exception(prompts_discrete_indices)
-
-        if args.use_ngram:
-            prompts_discrete_indices_ngram_list = []
-            indices_list = prompts_discrete_indices.int().tolist()
-            for idx in indices_list:
-                prompts_discrete_indices_ngram_list.append(ngram_list[idx])
-            prompts_discrete_ngram_indices = torch.tensor(prompts_discrete_indices_ngram_list)
+        model.trainable_params.copy_from(prompts_probs)
 
         for step, batch in enumerate(test_dataloader):
             if args.trial and step >= 100:
                 break
             bsz = len(batch['input_ids'])
-            
-            if args.use_ngram:
-                batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_ngram_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-                prompt_sample = tokenizer.decode(prompts_discrete_indices_ngram_list)
-            else:
-                batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-            batch["attention_mask"] = torch.cat([torch.ones(bsz, prompt_length).to(args.device), batch["attention_mask"]],dim=1)
 
             mask_pos = np.where(np.array(batch['input_ids'].cpu()) == tokenizer.mask_token_id) 
-            mask_pos = torch.tensor(mask_pos[-1])
+            mask_pos = torch.tensor(mask_pos[-1]) + args.prompt_length
             label_to_id = model.config.label2id 
             sequence_output = model(input_ids=batch['input_ids'], attention_mask=batch["attention_mask"])
             last_hidden_state = sequence_output[0].squeeze()
@@ -472,16 +458,9 @@ def testPrefixTuning(args, model, test_dataloader, metric, accelerator, epoch, r
         if args.task_name == 'mnli':
             for step, batch in enumerate(test_dataloader_mm):
                 bsz = len(batch['input_ids'])
-                
-                if args.use_ngram:
-                    batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_ngram_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-                    prompt_sample = tokenizer.decode(prompts_discrete_indices_ngram_list)
-                else:
-                    batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-                batch["attention_mask"] = torch.cat([torch.ones(bsz, prompt_length).to(args.device), batch["attention_mask"]],dim=1)
 
                 mask_pos = np.where(np.array(batch['input_ids'].cpu()) == tokenizer.mask_token_id) 
-                mask_pos = torch.tensor(mask_pos[-1])
+                mask_pos = torch.tensor(mask_pos[-1]) + args.prompt_length
                 label_to_id = model.config.label2id 
                 sequence_output = model(input_ids=batch['input_ids'], attention_mask=batch["attention_mask"])
                 last_hidden_state = sequence_output[0].squeeze()
