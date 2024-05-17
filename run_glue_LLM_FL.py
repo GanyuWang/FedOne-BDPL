@@ -239,7 +239,7 @@ if __name__ == "__main__":
         elif args.prompt_tuning_method == "BDPL":
             eval_result = evaluateBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
         elif args.prompt_tuning_method == "prefix-tuning":
-            eval_result = evaluatePrefixTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
+            eval_result = evaluatePrefixTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=average_theta, tokenizer=tokenizer)
         elif args.prompt_tuning_method == "prompt-tuning":
             eval_result = evaluatePromptTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
         else:

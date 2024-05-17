@@ -171,6 +171,24 @@ class ModelParams:
         
         return ModelParams(detached_prefix_embeddings, detached_attention_params)
 
+    def copy_from(self, source):
+        """
+        Copy the values from another ModelParams instance into this one.
+
+        Parameters:
+        - source (ModelParams): The source ModelParams instance to copy from.
+        """
+        if not isinstance(source, ModelParams):
+            raise TypeError("Source must be an instance of ModelParams.")
+
+        # Copy prefix embeddings
+        self.prefix_embeddings.data.copy_(source.prefix_embeddings.data)
+
+        # Copy attention parameters
+        for dest_layer, src_layer in zip(self.attention_params, source.attention_params):
+            for key in dest_layer:
+                dest_layer[key]['weight'].data.copy_(src_layer[key]['weight'].data)
+                dest_layer[key]['bias'].data.copy_(src_layer[key]['bias'].data)
 
 class PrefixTunedRoberta(nn.Module):
     def __init__(self, args, model, config, prefix_length=10):
@@ -342,31 +360,41 @@ class ClientPrefixTuning:
         return updated_params
 
 
-def evaluatePrefixTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, results):
+def evaluatePrefixTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, results, prompts_probs=None, tokenizer=None):
     model.eval()
+    model.trainable_params.copy_from(prompts_probs)
     with torch.no_grad():
         for step, batch in enumerate(eval_dataloader):
             if args.trial and step >= 100:
                 break
 
-            input_ids = batch['input_ids'].to(args.device)
-            attention_mask = batch['attention_mask'].to(args.device)
-            labels = batch['labels'].to(args.device)
+            input_ids = batch['input_ids']
+            attention_mask = batch["attention_mask"]
+            # Find the maks position. 
+            # bsz = len(batch['input_ids'])
+            mask_pos = np.where(np.array(input_ids.cpu()) == tokenizer.mask_token_id)     # 找到 mask position. 
+            mask_pos = torch.tensor(mask_pos[-1]) 
+                    
+            # label and convert to target. 
+            label = batch["labels"]
+            label_keys = list(model.label_to_id.keys())
+            label_map = {}
+            for target in label_keys:
+                label_map[tokenizer.encode(target, add_special_tokens=False)[0]] = model.label_to_id[target]
 
-            batch_size, seq_length = input_ids.size()
-            prefix = model.prefix_embeddings.unsqueeze(0).repeat(batch_size, 1, 1)
-            extended_attention_mask = torch.cat([torch.ones(batch_size, model.prefix_length, dtype=torch.long, device=args.device), attention_mask], dim=1)
+                converted_target = label.clone()
+                for key, val in label_map.items():
+                    converted_target[label == key] = val
+                interest_index = list(label_map.keys())
 
-            inputs_embeds = model.model.roberta.embeddings(input_ids)
-            inputs_embeds = torch.cat([prefix, inputs_embeds], dim=1)
+                sequence_output = train_api_request(model, input_ids=input_ids, attention_mask=attention_mask) #
+                last_hidden_state = sequence_output[0].squeeze()
+                    
+                logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
+                logits = logits[:, interest_index]
+                predictions = logits.argmax(dim=-1) 
 
-            outputs = model(inputs_embeds=inputs_embeds, attention_mask=extended_attention_mask)
-            logits = outputs.logits  
-
-            eval_loss = ce_loss(logits.view(-1, config.num_labels), labels.view(-1))
-            predictions = logits.argmax(dim=-1)
-
-            metric.add_batch(predictions=accelerator.gather(predictions), references=accelerator.gather(labels))
+            metric.add_batch(predictions=accelerator.gather(predictions), references=accelerator.gather(label))
 
         if args.file_name in DOMAIN_DATASET:
             eval_metric = metric.compute(average='macro')
