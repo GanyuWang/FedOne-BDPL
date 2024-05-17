@@ -68,10 +68,10 @@ class ClientBBT:
             'verbose': -1,
             'bounds' : [-5, 5]
         }
-        self.populiation_size = 2000 # population size
+
+        self.populiation_size = 200 # population size
         self.bounds = np.tile(np.array([-5, 5]), (self.d, 1)) # -5,5 bound for each element. 
 
-        
         # FL parameter. 
         self.dataset = client_partial_train_dataset  # Local dataset for the client
         self.train_dataloader = DataLoader(self.dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size)
@@ -106,7 +106,7 @@ class ClientBBT:
                     # Find the maks position. 
                     # bsz = len(batch['input_ids'])
                     mask_pos = np.where(np.array(input_ids.cpu()) == tokenizer.mask_token_id)     # 找到 mask position. 
-                    mask_pos = torch.tensor(mask_pos[-1]) 
+                    mask_pos = torch.tensor(mask_pos[-1]) + args.prompt_length
                     
                     # label and convert to target. 
                     label = batch["labels"]
@@ -183,7 +183,7 @@ class ClientBBT:
             attention_mask = batch["attention_mask"]
 
             mask_pos=np.where(np.array(batch['input_ids'].cpu()) == tokenizer.mask_token_id) 
-            mask_pos = torch.tensor(mask_pos[-1])
+            mask_pos = torch.tensor(mask_pos[-1]) + args.prompt_length
             label_to_id = model.config.label2id 
 
             z = prompts_probs
@@ -255,7 +255,7 @@ class ClientBBT:
                 attention_mask = batch["attention_mask"]
                 
                 mask_pos = np.where(np.array(batch['input_ids'].cpu()) == tokenizer.mask_token_id) 
-                mask_pos = torch.tensor(mask_pos[-1])
+                mask_pos = torch.tensor(mask_pos[-1]) + args.prompt_length
                 label_to_id = model.config.label2id 
                 
                 # 
