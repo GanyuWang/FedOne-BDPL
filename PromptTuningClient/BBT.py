@@ -52,7 +52,7 @@ class ClientBBT:
         self.config = config
 
         # optimizer. 
-        self.d = 20 # low dimension
+        self.d = 500 # low dimension
         self.embedding_dim = model.get_input_embeddings().embedding_dim
         self.D = args.prompt_length * self.embedding_dim # prompt space dimension. 
         # Initialize the A matrix, this is the same across all clients. 
@@ -68,7 +68,7 @@ class ClientBBT:
             'verbose': -1,
             'bounds' : [-5, 5]
         }
-        self.populiation_size = 2 # population size
+        self.populiation_size = 2000 # population size
         self.bounds = np.tile(np.array([-5, 5]), (self.d, 1)) # -5,5 bound for each element. 
 
         
@@ -189,9 +189,9 @@ class ClientBBT:
             z = prompts_probs
             input_ids = batch['input_ids']
             batch_size = bsz
-            prefix_embedding = torch.matmul(ClientBBT._A, z)# p_0 is none
-            prefix_embedding = prefix_embedding.reshape(args.prompt_length, -1)
-            prefix = prefix_embedding.reshape((args.prompt_length, -1)).repeat(batch_size, 1, 1).to(args.device) # 这里有问题。需要的是
+            prefix_embedding = torch.matmul(ClientBBT._A, z) # p_0 is none
+            prefix_embedding = prefix_embedding.reshape(args.prompt_length, -1) 
+            prefix = prefix_embedding.reshape((args.prompt_length, -1)).repeat(batch_size, 1, 1).to(args.device) # 
             inputs_embeds = model.roberta.embeddings(input_ids)  # Assuming input_ids is not None
             inputs_embeds = torch.cat((prefix, inputs_embeds), dim=1)    
             prefix_attention_mask = torch.ones((batch_size, args.prompt_length), dtype=torch.long, device=input_ids.device)
