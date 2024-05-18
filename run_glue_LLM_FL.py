@@ -281,8 +281,8 @@ if __name__ == "__main__":
         raise Exception("Prompt-tuning method incoorect.")
     
     # add the log for the final. 
-    row =  [epoch, tracker.comp_time,
+    row =  [-100, tracker.comp_time,
                 test_result, test_results,
-                'FL_comm_cost_F', "FL_comm_cost_B", "FL_comm_cost", 'FL_query_times', 
+                tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 
                 'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", train_api_request.count ]
     csv_log.append_log(row)

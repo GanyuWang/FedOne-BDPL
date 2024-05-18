@@ -1,6 +1,6 @@
 # RoBERTa-based experiments
 python ./run_glue_LLM_FL.py \
---task_name=mnli \
+--task_name=qqp \
 --model_name_or_path roberta-base \
 --per_device_train_batch_size 128 \
 --per_device_eval_batch_size 16 \
@@ -11,7 +11,7 @@ python ./run_glue_LLM_FL.py \
 --api_limit 8000 --ce_loss True \
 --num_train_epochs 2 \
 --FL_framework FedAvg --num_clients 10 --num_activated_clients 1 --num_client_local_step 1 --max_client_train_steps 8000 \
---prompt_tuning_method BBT \
+--prompt_tuning_method prompt-tuning \
 --log_file_name TempResult
 
 

@@ -350,3 +350,5 @@ class ClientBBT:
                     for key in test_metric_mm.keys():
                         eval_key = 'Black_test_' + key + '_mm'
                         wandb.log({eval_key: test_metric_mm[key]})
+
+            return test_result
