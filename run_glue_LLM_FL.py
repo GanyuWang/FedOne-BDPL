@@ -241,7 +241,7 @@ if __name__ == "__main__":
         elif args.prompt_tuning_method == "prefix-tuning":
             eval_result = evaluatePrefixTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=average_theta, tokenizer=tokenizer)
         elif args.prompt_tuning_method == "prompt-tuning":
-            eval_result = evaluatePromptTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
+            eval_result = evaluatePromptTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
         else:
             raise Exception("Prompt-tuning method incoorect.")
        
@@ -272,7 +272,7 @@ if __name__ == "__main__":
     elif args.prompt_tuning_method == "prefix-tuning":
         test_result = testPrefixTuning(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
     elif args.prompt_tuning_method == "prompt-tuning":
-        test_result = testPromptTuning(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
+        test_result = testPromptTuning(args, model, test_dataloader, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
     else:
         raise Exception("Prompt-tuning method incoorect.")
     

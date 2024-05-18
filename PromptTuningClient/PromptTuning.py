@@ -121,29 +121,16 @@ class ClientPromptTuning:
         return local_theta
 
 
-def evaluatePromptTuning(args,  model, eval_dataloader, metric, ce_loss,config, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None):
-    prompts_discrete_indices = prompts_probs.argmax(1)
-
-    if args.use_ngram:
-        prompts_discrete_indices_ngram_list = []
-        indices_list = prompts_discrete_indices.int().tolist()
-        for idx in indices_list:
-            prompts_discrete_indices_ngram_list.append(ngram_list[idx])
-        prompts_discrete_ngram_indices = torch.tensor(prompts_discrete_indices_ngram_list)
+def evaluatePromptTuning(args,  model, eval_dataloader, metric, ce_loss,config, accelerator, epoch, results, prompts_probs=None, prompt_length=None,tokenizer=None):
+    model.prompt_encoder.default.embedding.weight.data.copy_(prompts_probs.data)
 
     for step, batch in enumerate(eval_dataloader):
         if args.trial and step >= 100:
             break
         bsz = len(batch['input_ids'])
 
-        if args.use_ngram:
-            batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_ngram_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-        else:
-            batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-        batch["attention_mask"] = torch.cat([torch.ones(bsz, prompt_length).to(args.device), batch["attention_mask"]],dim=1)
-
         mask_pos=np.where(np.array(batch['input_ids'].cpu()) == tokenizer.mask_token_id) 
-        mask_pos = torch.tensor(mask_pos[-1])
+        mask_pos = torch.tensor(mask_pos[-1]) + args.prompt_length
         label_to_id = model.config.label2id 
 
         sequence_output = model(input_ids=batch['input_ids'], attention_mask=batch["attention_mask"])
@@ -190,32 +177,17 @@ def evaluatePromptTuning(args,  model, eval_dataloader, metric, ce_loss,config, 
 
     return eval_result
 
-def testPromptTuning(args, model, test_dataloader, metric, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None, tokenizer=None, test_dataloader_mm=None):
+def testPromptTuning(args, model, test_dataloader, metric, accelerator, epoch, results, prompts_probs=None, prompt_length=None, tokenizer=None, test_dataloader_mm=None):  
     if args.task_name == None or args.k_shot >= 0:
-        prompts_discrete_indices = prompts_probs.argmax(1)
-        #raise Exception(prompts_discrete_indices)
-
-        if args.use_ngram:
-            prompts_discrete_indices_ngram_list = []
-            indices_list = prompts_discrete_indices.int().tolist()
-            for idx in indices_list:
-                prompts_discrete_indices_ngram_list.append(ngram_list[idx])
-            prompts_discrete_ngram_indices = torch.tensor(prompts_discrete_indices_ngram_list)
+        model.prompt_encoder.default.embedding.weight.data.copy_(prompts_probs.data)
 
         for step, batch in enumerate(test_dataloader):
             if args.trial and step >= 100:
                 break
             bsz = len(batch['input_ids'])
-            
-            if args.use_ngram:
-                batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_ngram_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-                prompt_sample = tokenizer.decode(prompts_discrete_indices_ngram_list)
-            else:
-                batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-            batch["attention_mask"] = torch.cat([torch.ones(bsz, prompt_length).to(args.device), batch["attention_mask"]],dim=1)
 
             mask_pos = np.where(np.array(batch['input_ids'].cpu()) == tokenizer.mask_token_id) 
-            mask_pos = torch.tensor(mask_pos[-1])
+            mask_pos = torch.tensor(mask_pos[-1]) + args.prompt_length
             label_to_id = model.config.label2id 
             sequence_output = model(input_ids=batch['input_ids'], attention_mask=batch["attention_mask"])
             last_hidden_state = sequence_output[0].squeeze()
@@ -246,16 +218,9 @@ def testPromptTuning(args, model, test_dataloader, metric, accelerator, epoch, r
         if args.task_name == 'mnli':
             for step, batch in enumerate(test_dataloader_mm):
                 bsz = len(batch['input_ids'])
-                
-                if args.use_ngram:
-                    batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_ngram_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-                    prompt_sample = tokenizer.decode(prompts_discrete_indices_ngram_list)
-                else:
-                    batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-                batch["attention_mask"] = torch.cat([torch.ones(bsz, prompt_length).to(args.device), batch["attention_mask"]],dim=1)
 
                 mask_pos = np.where(np.array(batch['input_ids'].cpu()) == tokenizer.mask_token_id) 
-                mask_pos = torch.tensor(mask_pos[-1])
+                mask_pos = torch.tensor(mask_pos[-1]) + args.prompt_length
                 label_to_id = model.config.label2id 
                 sequence_output = model(input_ids=batch['input_ids'], attention_mask=batch["attention_mask"])
                 last_hidden_state = sequence_output[0].squeeze()
