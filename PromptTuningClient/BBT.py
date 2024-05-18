@@ -52,24 +52,15 @@ class ClientBBT:
         self.config = config
 
         # optimizer. 
-        self.d = 500 # low dimension
+        self.d = args.bbt_d # low dimension
         self.embedding_dim = model.get_input_embeddings().embedding_dim
         self.D = args.prompt_length * self.embedding_dim # prompt space dimension. 
         # Initialize the A matrix, this is the same across all clients. 
         if ClientBBT._A is None: 
             ClientBBT._A = torch.randn(self.D, self.d).to(args.device)  # the Mapping from low space to prompt space
-        self.sigma = 1.2
+        self.sigma = args.bbt_sigma
 
-        # cma_es
-        self.cma_opts = {
-            'seed': args.seed,
-            'popsize': 1,
-            'maxiter': 1,
-            'verbose': -1,
-            'bounds' : [-5, 5]
-        }
-
-        self.populiation_size = 200 # population size
+        self.populiation_size = args.bbt_population_size # population size
         self.bounds = np.tile(np.array([-5, 5]), (self.d, 1)) # -5,5 bound for each element. 
 
         # FL parameter. 
@@ -299,9 +290,11 @@ class ClientBBT:
             if args.task_name == 'mnli':
                 for step, batch in enumerate(test_dataloader_mm):
                     bsz = len(batch['input_ids'])
+                    input_ids = batch['input_ids']
+                    attention_mask = batch["attention_mask"]
                     
                     mask_pos = np.where(np.array(batch['input_ids'].cpu()) == tokenizer.mask_token_id) 
-                    mask_pos = torch.tensor(mask_pos[-1])
+                    mask_pos = torch.tensor(mask_pos[-1]) + args.prompt_length
                     label_to_id = model.config.label2id 
 
                     # 

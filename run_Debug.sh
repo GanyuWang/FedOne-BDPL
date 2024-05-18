@@ -1,6 +1,6 @@
 # RoBERTa-based experiments
 python ./run_glue_LLM_FL.py \
---task_name=mrpc \
+--task_name=mnli \
 --model_name_or_path roberta-base \
 --per_device_train_batch_size 128 \
 --per_device_eval_batch_size 16 \

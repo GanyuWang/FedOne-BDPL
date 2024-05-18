@@ -89,8 +89,12 @@ def parse_args():
     parser.add_argument("--num_activated_clients", type=int, default=10 , help="The number of activated clients in each epoch of FL.")
     parser.add_argument("--num_client_local_step", type=int, default=1000 , help="The number of clients' local update steps in FL.")
     parser.add_argument("--max_client_train_steps", type=int, default=8000, help="Total number of training steps to perform. If provided, overrides num_train_epochs.")
-    # white box prompt tuning. 
+    # prompt tuning method. 
     parser.add_argument("--prompt_tuning_method", type=str, default="BDPL", help="Which white-box tuning method:BBT, BDPL, prefix-tuning, prompt-tuning, " )
+    # BBT parameter
+    parser.add_argument("--bbt_d", type=int, default=500, help="the d for BBT.")
+    parser.add_argument("--bbt_sigma", type=float, default=1.0, help="the sigma for CMAES in BBT.")
+    parser.add_argument("--bbt_population_size", type=int, default=20, help="the population size for CMAES in BBT.")
     # log file. 
     parser.add_argument("--log_file_name", type=str, default="TempResult", help="log file path." )
     args = parser.parse_args()
