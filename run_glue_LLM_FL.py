@@ -267,7 +267,10 @@ if __name__ == "__main__":
             break
 
     if args.prompt_tuning_method == "prompt-tuning":
-        model.prompt_encoder.default.embedding.weight.data = best_theta
+        model.prompt_encoder.default.embedding.weight.data.copy_(best_theta.data)
+
+    if args.prompt_tuning_method == "prefix-tuning":
+        model.trainable_params.copy_from(best_theta)
 
     if args.prompt_tuning_method == "BBT":
         test_result = ClientBBT.testBBT(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
@@ -286,3 +289,4 @@ if __name__ == "__main__":
                 tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 
                 'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", train_api_request.count ]
     csv_log.append_log(row)
+    print(best_theta)
