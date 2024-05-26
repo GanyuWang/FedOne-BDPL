@@ -2,6 +2,8 @@ wandb/
 assets/
 __pycache__/
 ExperimentResult/
+ExperimentResult2/
+PreliminaryResult/
 install.sh
 run.sh
 run_backup.sh
@@ -10,3 +12,6 @@ run_Debug.sh
 TempResult.csv
 .nfs00000000043a5ee90000000f
 .vscode/launch.json
+run_Experiment1.sh
+run_Experiment2.sh
+run_Experiment3.sh
