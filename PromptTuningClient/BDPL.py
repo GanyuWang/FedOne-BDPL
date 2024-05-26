@@ -139,10 +139,25 @@ class ClientBDPL:
                         
                         self.prompt_optimizer.zero_grad()
 
-                        derivative = (-1 / self.prompts_probs).repeat(args.sample_size, 1, 1)
-                        for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
-                            for i in range(args.prompt_length):
-                                derivative[k][i][prompts_discrete_indices[i]] *= -1
+                        if args.bdpl_gradient_method == "negative": #一个正其他负。
+                            derivative = (-1 / self.prompts_probs).repeat(args.sample_size, 1, 1)
+                            for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
+                                for i in range(args.prompt_length):
+                                        derivative[k][i][prompts_discrete_indices[i]] *= -1  # 只有一个正。其他负。
+                        elif args.bdpl_gradient_method == "zero": # 一个正其他0.
+                            derivative_1devided_by_p = (1 / self.prompts_probs).repeat(args.sample_size, 1, 1)
+                            derivative = (torch.zeros_like(self.prompts_probs)).repeat(args.sample_size, 1, 1)
+                            for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
+                                for i in range(args.prompt_length):
+                                        derivative[k][i][prompts_discrete_indices[i]] = derivative_1devided_by_p[k][i][prompts_discrete_indices[i]]  # 只有一个正。其他0。
+                        elif args.bdpl_gradient_method == "normalize": # 一个正 其他 - 1/prompt_searching_space * p. 
+                            derivative = (-1 / self.prompts_probs /args.prompt_search_space).repeat(args.sample_size, 1, 1)
+                            for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
+                                for i in range(args.prompt_length):
+                                        derivative[k][i][prompts_discrete_indices[i]] *= -1 * args.prompt_search_space  # 只有一个正 1/p。其他 - 1/p /searching space.
+                        else:
+                            raise Exception("No bdpl_gradient calcualtion selected. ")
+                                
 
                         self.prompts_probs.grad = torch.zeros_like(self.prompts_probs)
                         for k in range(args.sample_size):
