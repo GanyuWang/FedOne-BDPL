@@ -1,25 +1,29 @@
-# RoBERTa-based experiments
-python ./run_glue_LLM_FL.py \
---task_name=mrpc \
---model_name_or_path roberta-base \
---per_device_train_batch_size 128 \
---per_device_eval_batch_size 16 \
---weight_decay=0.1 --seed=42 \
---k_shot 16 --prompt_learning_rate 1e-4 \
---sample_size 20 --prompt_length 10 \
---prompt_search_space 200 \
---api_limit 8000 --ce_loss True \
---num_train_epochs 10 \
---FL_framework FedAvg --num_clients 10 --num_activated_clients 5 --num_client_local_step 1 --max_client_train_steps 8000 \
---prompt_tuning_method BDPL \
---log_file_name ExperimentResult/FedAvg_BDPL_NC10_AC5_Epoch10
+ac=1
+prompt_tuning_method=BBT
+prompt_learning_rate=3e-5
+prompt_length=20
+bbt_population_size=200
+early_stop=77e-2
 
-# # GPT-based experiments
-# python ./run_glue_discrete_GPT.py \
-# --task_name=mrpc \
-# --per_device_train_batch_size 4 \
-# --per_device_eval_batch_size 4 \
-# --k_shot 16 --prompt_learning_rate 2e-4 \
-# --sample_size 20 --prompt_length 20 \
-# --prompt_search_space 50 --num_train_epochs 10 \
-# --api_key [API_KEY]
+
+for seed in {101..120}
+    do
+    echo activated_client_${ac}_seed_${seed}
+    CUDA_VISIBLE_DEVICES=2 python ./run_glue_LLM_FL.py \
+        --task_name=sst2 \
+        --prompt_tuning_method ${prompt_tuning_method} \
+        --bdpl_gradient_method zero \
+        --model_name_or_path roberta-base \
+        --per_device_train_batch_size 128 \
+        --per_device_eval_batch_size 16 \
+        --weight_decay=0.01 --seed=$seed \
+        --k_shot 16 --prompt_learning_rate ${prompt_learning_rate} \
+        --sample_size 20 --prompt_length ${prompt_length} \
+        --prompt_search_space 200 \
+        --api_limit 80000 --ce_loss True \
+        --bbt_population_size ${bbt_population_size} \
+        --num_train_epochs 100 \
+        --FL_framework FedAvg --num_clients 100 --num_activated_clients ${ac} --num_client_local_step 1 --max_client_train_steps 8000 \
+        --early_stop ${early_stop} \
+        --log_file_name ExperimentResult2/sst2_${prompt_tuning_method}_ps${bbt_population_size}_lr${prompt_learning_rate}_pl${prompt_length}_ac${ac}_es${early_stop}_seed${seed}
+done

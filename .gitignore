@@ -8,6 +8,9 @@ install.sh
 run.sh
 run_backup.sh
 run_Experiment.sh
+run_Experiment1.sh
+run_Experiment2.sh
+run_Experiment3.sh
 run_Debug.sh
 TempResult.csv
 .nfs00000000043a5ee90000000f

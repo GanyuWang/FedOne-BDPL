@@ -93,7 +93,7 @@ LABEL_CONVERT = {
 TEMPLATE_CONFIG = {
     "mnli": " entailment? [MASK].",
     "qqp": "? [MASK],",
-    "sst2": " It was [MASK].",
+    "sst2": " It was [MASK].", # original " It was [MASK]."
     "mrpc": "? [MASK],",
     "cola": " correct? [MASK].",
     "wnli": " entailment? [MASK].",

@@ -91,10 +91,14 @@ def parse_args():
     parser.add_argument("--max_client_train_steps", type=int, default=8000, help="The limit of client's local iteration, per activation")
     # prompt tuning method. 
     parser.add_argument("--prompt_tuning_method", type=str, default="BDPL", help="Which white-box tuning method:BBT, BDPL, prefix-tuning, prompt-tuning, " )
+    # BDPL
+    parser.add_argument("--bdpl_gradient_method", type=str, default="negative", help="negative, zero, normalize" )
     # BBT parameter
     parser.add_argument("--bbt_d", type=int, default=500, help="the d for BBT.")
     parser.add_argument("--bbt_sigma", type=float, default=1.0, help="the sigma for CMAES in BBT.")
     parser.add_argument("--bbt_population_size", type=int, default=20, help="the population size for CMAES in BBT.") #多次采样次数
+    # Early Stop
+    parser.add_argument("--early_stop", type=float, default=-1.0, help="stop when the validation result reach") # 
     # log file. 
     parser.add_argument("--log_file_name", type=str, default="TempResult", help="log file path." )
     args = parser.parse_args()
@@ -200,7 +204,7 @@ if __name__ == "__main__":
             # training. 
             client_prompts_probs_list = []
             client_dataset_len_list = []
-            for client_idx in random.sample(range(args.num_clients), args.num_activated_clients) :
+            for client_idx in random.sample(range(args.num_clients), args.num_activated_clients):
                 # Each client train and update.  
                 client_prompts_probs = client_list[client_idx].local_training(args, model, tokenizer, average_theta, tracker)
                 client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
@@ -253,18 +257,24 @@ if __name__ == "__main__":
                 eval_result, 'val_metric_2',
                 tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 
                 'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", train_api_request.count ]
-        csv_log.append_log(row)
+        csv_log.append_log(row) 
 
         #print(average_theta)
 
         if eval_result >= best_eval_result:
             best_eval_result = eval_result
             best_theta = average_theta.clone().detach()
-            print(best_theta)
+            print("best theta")
         if 'cuda' in str(args.device):
             torch.cuda.empty_cache()
         if train_api_request.count >= args.api_limit:
             break
+        print(average_theta[0])
+
+        # early stop. 
+        if args.early_stop > 0:
+            if eval_result > args.early_stop:
+                break
 
     if args.prompt_tuning_method == "prompt-tuning":
         model.prompt_encoder.default.embedding.weight.data.copy_(best_theta.data)
