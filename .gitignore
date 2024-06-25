@@ -15,6 +15,5 @@ run_Debug.sh
 TempResult.csv
 .nfs00000000043a5ee90000000f
 .vscode/launch.json
-run_Experiment1.sh
-run_Experiment2.sh
-run_Experiment3.sh
+.env
+test_openai.py
