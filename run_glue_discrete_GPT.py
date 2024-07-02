@@ -123,7 +123,7 @@ def constrainScoreByWholeExact(prompt_embeds):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Finetune a transformers model on a text classification task")
-    parser.add_argument("--model_name_or_path", type=str, default='text-babbage-001', help="Path to pretrained model or model identifier from huggingface.co/models.")
+    parser.add_argument("--model_name_or_path", type=str, default='gpt-3.5-turbo-instruct', help="Path to pretrained model or model identifier from huggingface.co/models.")
     parser.add_argument("--task_name", type=str, default=None, help="The name of the glue task.", choices=list(task_to_keys.keys()))
     parser.add_argument("--file_name", type=str, default=None, help="The name of the domain-specific task.")
     parser.add_argument("--low_resource", action="store_true")
@@ -225,7 +225,7 @@ def complete_gpt3(prompt, l, model_name, temp=0.0, num_log_probs=None, echo=Fals
     while not received:
         try:
             response = openai.Completion.create(engine=model_name, prompt=prompt, max_tokens=l, temperature=temp,
-                                                logprobs=100, echo=echo, stop='\n')
+                                                logprobs=100, echo=False, stop='\n')
             received = True
         except:
             error = sys.exc_info()[0]
