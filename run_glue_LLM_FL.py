@@ -43,6 +43,7 @@ from preprocess import prepare_and_load_dataset, train_api_request, split_datase
 
 from PromptTuningClient.BBT import ClientBBT
 from PromptTuningClient.BDPL import ClientBDPL, evaluateBDPL, testBDPL
+from PromptTuningClient.Gumbel_BDPL import ClientGumbelBDPL, evaluateGumbelBDPL, testGumbelBDPL
 from PromptTuningClient.PrefixTuning import ClientPrefixTuning, evaluatePrefixTuning, testPrefixTuning
 from PromptTuningClient.PromptTuning import ClientPromptTuning, evaluatePromptTuning, testPromptTuning
 
@@ -97,6 +98,8 @@ def parse_args():
     parser.add_argument("--bbt_d", type=int, default=500, help="the d for BBT.")
     parser.add_argument("--bbt_sigma", type=float, default=1.0, help="the sigma for CMAES in BBT.")
     parser.add_argument("--bbt_population_size", type=int, default=20, help="the population size for CMAES in BBT.") #多次采样次数
+    # BDPL Gumbel Softmax 
+    parser.add_argument("--tau", type=float, default=0.1, help="The temperature of gumbel_softmax")
     # Early Stop
     parser.add_argument("--early_stop", type=float, default=-1.0, help="stop when the validation result reach") # 
     # log file. 
@@ -125,7 +128,6 @@ def parse_args():
     args.k_shot = args.k_shot * args.num_clients  # making each FL hold a k_shot dataset. 
 
     return args
-
 
 
 if __name__ == "__main__":
@@ -246,6 +248,8 @@ if __name__ == "__main__":
             eval_result = ClientBBT.evaluateBBT(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
         elif args.prompt_tuning_method == "BDPL":
             eval_result = evaluateBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
+        elif args.prompt_tuning_method == "GumbelBDPL":
+            eval_result = evaluateGumbelBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_alpha=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)   # prompts_alpha
         elif args.prompt_tuning_method == "prefix-tuning":
             eval_result = evaluatePrefixTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=average_theta, tokenizer=tokenizer)
         elif args.prompt_tuning_method == "prompt-tuning":
@@ -286,6 +290,8 @@ if __name__ == "__main__":
         test_result = ClientBBT.testBBT(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
     elif args.prompt_tuning_method == "BDPL":
         test_result = testBDPL(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
+    elif args.prompt_tuning_method == "GumbelBDPL":
+        test_result = testGumbelBDPL(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_alpha=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)   # prompts_alpha
     elif args.prompt_tuning_method == "prefix-tuning":
         test_result = testPrefixTuning(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
     elif args.prompt_tuning_method == "prompt-tuning":
