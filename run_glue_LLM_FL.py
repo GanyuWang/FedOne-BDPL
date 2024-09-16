@@ -152,7 +152,7 @@ if __name__ == "__main__":
     test_results = []
 
     # Black-box tuning. 
-    if args.prompt_tuning_method in ["BDPL", "BBT"]:
+    if args.prompt_tuning_method in ["BDPL", "GumbelBDPL", "BBT"]:
         model.eval()
         for name, param in model.named_parameters():
             param.requires_grad = False
@@ -183,6 +183,8 @@ if __name__ == "__main__":
             client = ClientBBT(args, accelerator, model, client_trainset_list[client_idx], data_collator, config)
         elif args.prompt_tuning_method == "BDPL":
             client = ClientBDPL(args, accelerator, client_trainset_list[client_idx], data_collator, config, ngram_list)
+        elif args.prompt_tuning_method == "GumbelBDPL":
+            client = ClientGumbelBDPL(args, accelerator, client_trainset_list[client_idx], data_collator, config, ngram_list)
         elif args.prompt_tuning_method == "prefix-tuning":
             client = ClientPrefixTuning(args, accelerator, model, client_trainset_list[client_idx], data_collator, config)
         elif args.prompt_tuning_method == "prompt-tuning":
@@ -192,6 +194,8 @@ if __name__ == "__main__":
     # 2 写 FL训练的框架。
     if args.prompt_tuning_method == "BDPL":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
+    if args.prompt_tuning_method == "GumbelBDPL":
+        average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)*0.01
     elif args.prompt_tuning_method == "BBT":
         average_theta = torch.zeros(client_list[0].d)
     elif args.prompt_tuning_method == "prompt-tuning":
