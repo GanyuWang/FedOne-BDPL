@@ -7,7 +7,7 @@ early_stop=78e-2
 
 seed=49
 echo activated_client_${ac}_seed_${seed}
-CUDA_VISIBLE_DEVICES=2 python ./run_glue_LLM_FL.py \
+CUDA_VISIBLE_DEVICES=2 python ./run_glue_LLM_GPT.py \
     --task_name=sst2 \
     --prompt_tuning_method ${prompt_tuning_method} \
     --bdpl_gradient_method zero \
