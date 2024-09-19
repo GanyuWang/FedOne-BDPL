@@ -4,6 +4,7 @@ import torch
 import math
 import os
 import random
+import pandas as pd
 import datasets
 from datasets import load_dataset, load_metric
 from torch.utils.data import DataLoader
@@ -29,7 +30,8 @@ import wandb
 from peft import get_peft_config, get_peft_model,  TaskType, PeftType
 from peft import PromptTuningInit, PromptTuningConfig, PrefixTuningConfig, PromptEncoderConfig
 from PromptTuningClient.PrefixTuning import PrefixTunedRoberta
-
+import openai 
+import sys
 
 
 
