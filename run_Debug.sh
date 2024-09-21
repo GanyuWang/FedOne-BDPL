@@ -11,7 +11,7 @@ CUDA_VISIBLE_DEVICES=2 python ./run_glue_LLM_FL.py \
     --task_name=sst2 \
     --prompt_tuning_method ${prompt_tuning_method} \
     --bdpl_gradient_method zero \
-    --model_name_or_path roberta-base \
+    --model_name_or_path roberta-large \
     --per_device_train_batch_size 128 \
     --per_device_eval_batch_size 16 \
     --weight_decay=0.01 --seed=$seed \

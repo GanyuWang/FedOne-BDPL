@@ -54,7 +54,7 @@ class ClientGumbelBDPL:
         #self.prompts_probs.requires_grad = True
 
         # gumbel 
-        self.prompts_alpha = torch.FloatTensor([[1 / prompt_search_space] * prompt_search_space] * prompt_length)*0.01
+        self.prompts_alpha = torch.FloatTensor([[1 / prompt_search_space] * prompt_search_space] * prompt_length)*0.001
         # prompts_alpha = torch.FloatTensor([[15.0] * prompt_search_space] * prompt_length)
         self.prompts_alpha.requires_grad = True
         self.prompts_probs = F.gumbel_softmax(torch.log(self.prompts_alpha), tau=args.tau)
@@ -95,6 +95,7 @@ class ClientGumbelBDPL:
         for _ in range(self.num_local_step):
             try:
                 for step, batch in enumerate(self.train_dataloader):
+                    self.prompts_alpha.data = torch.clamp(self.prompts_alpha.data, min=1e-15)
                     self.prompts_probs = F.gumbel_softmax(torch.log(self.prompts_alpha), tau=args.tau)
                     prompts_dist = torch.distributions.Categorical(self.prompts_probs)
                     with torch.no_grad():
@@ -156,13 +157,12 @@ class ClientGumbelBDPL:
                             for i in range(args.prompt_length):  #
                                 derivative[k][i][prompts_discrete_indices[i]] = (1-self.prompts_probs[i][prompts_discrete_indices[i]])/(self.prompts_alpha[i][prompts_discrete_indices[i]]*args.tau)   
                         
-
                         self.prompts_alpha.grad = torch.zeros_like(self.prompts_alpha)
                         for k in range(args.sample_size):
                             self.prompts_alpha.grad = self.prompts_alpha.grad + (1 / (args.sample_size - 1)) * (loss_list[k] - loss_avg) * derivative[k]
 
                         #torch.nn.utils.clip_grad_norm_(self.prompts_probs, 3)
-                        
+                        #self.prompts_alpha.data = torch.clamp(self.prompts_alpha.data, min=1e-15)   # 增加clip。 
                         self.prompt_optimizer.step()
                         constrainScoreByWholeExact(self.prompts_probs)
 
@@ -177,6 +177,7 @@ class ClientGumbelBDPL:
 
 
 def evaluateGumbelBDPL(args,  model, eval_dataloader, metric, ce_loss,config, accelerator, epoch, results, ngram_list, prompts_alpha=None, prompt_length=None,tokenizer=None):
+
     prompts_probs = F.gumbel_softmax(torch.log(prompts_alpha), tau=args.tau)
     prompts_discrete_indices = prompts_probs.argmax(1)
 
