@@ -29,7 +29,9 @@ import wandb
 from peft import get_peft_config, get_peft_model,  TaskType, PeftType
 from peft import PromptTuningInit, PromptTuningConfig, PrefixTuningConfig, PromptEncoderConfig
 
-
+import pandas as pd
+import openai 
+import sys
 
 
 
@@ -88,23 +90,26 @@ LABEL_CONVERT = {
     'SE': {'COMPARE': ' comparison', 'CONJUNCTION': ' conjunction', 'EVALUATE-FOR': ' evaluation', 'FEATURE-OF': ' feature', 'HYPONYM-OF': ' hyponym', 'PART-OF': ' part', 'USED-FOR': ' function'},
     'RCT': {'BACKGROUND': ' background', 'CONCLUSIONS': ' conclusion', 'METHODS': ' method', 'OBJECTIVE': ' objective', 'RESULTS': ' result'},
     'HP': {False: ' unhelpful', True: ' helpful'},
+    'imdb': {0: ' terrible', 1: ' great'},
+    'cr': {0: ' terrible', 1: ' great'},
 }
 
 TEMPLATE_CONFIG = {
-    "mnli": " entailment? [MASK].",
-    "qqp": "? [MASK],",
-    "sst2": " It was [MASK].", # original " It was [MASK]."
-    "mrpc": "? [MASK],",
-    "cola": " correct? [MASK].",
-    "wnli": " entailment? [MASK].",
-    "qnli": " entailment? [MASK].",
-    "rte": " entailment? [MASK].",
-    "CI": " What is the intent? [MASK].", 
-    "SE": " What is the relation? [MASK].",
-    "RCT": " It is [MASK]. ",
-    "HP": " It is [MASK].",
-    "imdb": "It was [MASK].",
-    "cr": "It was [MASK].",
+    "mnli": " entailment?",
+    "qqp": " equivalent?",
+    "sst2": " What is the sentiment?",
+    "mrpc": " equivalent?",
+    "cola": " correct?",
+    "wnli": " What is the relation?",
+    'qnli': " entailment?",
+    "rte": " entailment?",
+    "CI": " What is the intent?",
+    "SE": " What is the relation?",
+    "RCT": " What is the role?",
+    "HP": " Helpful?",
+    "sst2": " It was ",
+    "imdb": " It was .",
+    "cr": " It was ",
 }
 
 def solve_v_total_exact(prompt_emb):
@@ -137,20 +142,18 @@ def constrainScoreByWholeExact(prompt_embeds):
     
 
 def pmi(args):
-
     result=[]
     if args.file_name:
-        with open("./pmi/" + args.file_name.lower() + ".txt",'r') as f:
+        with open("./pmi/" + "pmi_" + args.file_name.lower() + "_gpt" + ".txt",'r') as f:
             for line in f:
-                result = result + (list(line.strip('\n').split(',')))
+                result.append(line.strip('\n'))
     elif args.task_name:
-        with open("./pmi/" + args.task_name.lower() + ".txt",'r') as f:
+        with open("./pmi/" + "pmi_" + args.task_name.lower() + "_gpt" + ".txt",'r') as f:
             for line in f:
-                result = result + (list(line.strip('\n').split(',')))
-
+                result.append(line.strip('\n'))
     unique = []
     [unique.append(i) for i in result if not i in unique]
-    ngram_index_list = list(map(int, unique))
+    ngram_index_list = list(unique)
     return ngram_index_list
 
 def counter(func):
@@ -163,10 +166,128 @@ def counter(func):
     wrapper.count = 0
     return wrapper
 
+
+def create_batches(dataset, batch_size=1, shuffle=False):
+    if isinstance(dataset, dict):
+        dataset_dict = dataset
+    else:
+        dataset_dict = {'input': [], 'labels': []}
+        dataset_dict['input'] = dataset['input']
+        dataset_dict['labels'] = dataset['labels']
+    
+    if shuffle:
+        dataset_dict = pd.DataFrame(dataset_dict)
+        dataset_dict = dataset_dict.sample(frac=1)
+        dataset_dict = dataset_dict.to_dict(orient='list')
+    batches = {'sentence': [], 'labels':[]}  # 这个要重做。
+    for i in range(0,len(dataset_dict['input']),batch_size):
+        batches['sentence'].append(dataset_dict['input'][i: i + batch_size])
+        batches['labels'].append(dataset_dict['labels'][i: i + batch_size])
+    return batches
+
+import openai
+from openai import OpenAI
+# @counter
+class CompleteGPT():
+    def __init__(self):
+        self.client = OpenAI(
+            organization='org-c7dvGJnfkgmvqXizttGUqcfr',
+            project='proj_NxEVtMrlIaSr7NWRw6eeqeZB',
+        )
+
+    def complete_gpt3(self, prompt, l, model_name, n=1, top_logprob=1):
+        response = self.client.chat.completions.create(
+                    model=model_name,
+                    messages=prompt,
+                    logprobs=True,
+                    max_tokens=l,
+                    n=n,
+                    top_logprobs=top_logprob)
+        return response
+        """
+        response = None
+        received = False
+        while not received:
+            try:
+                response = self.client.chat.completions.create(
+                    model=model_name,
+                    messages=prompt,
+                    logprobs=True,
+                    max_tokens=l,
+                    n=n,
+                )
+                received = True
+            except:
+                error = sys.exc_info()[0]
+                if error == openai.BadRequestError:
+                    print(f"InvalidRequestError\nPrompt passed in:\n\n{prompt}\n\n")
+                    assert False
+                print("API error:", error)
+                time.sleep(1)
+        return response
+        """
+    @counter
+    def train_api_request(self, prompt, l, model_name, n=1, top_logprob=1):
+        response=self.complete_gpt3(prompt, l, model_name, n=n, top_logprob=top_logprob)
+        return response
+
+    class ApiCallLimitError(Exception):
+        pass
+
+    def get_regular_label_probs(self, responses, batch, labels, args, if_null=True, split="train"):
+        assert len(responses.choice) == len(batch)
+        label_probs = torch.zeros([len(responses.choice), 1, len(labels)])
+        all_missing_positions = []
+        for a, ans in enumerate(responses.choice):
+            for l, label in enumerate(labels):
+                if label == ans.logprobs.content[0].token:
+                    label_probs[a,:,l] = np.exp(ans.logprobs.content[0].logprob)
+                else:
+                    position = (a, l)
+                    all_missing_positions.append(position)
+                    
+        if len(all_missing_positions) > 0:
+            all_additional_prompts = []
+            for position in all_missing_positions:
+                which_sentence, which_label = position
+                missing_prompt = batch[which_sentence] + labels[which_label]
+                all_additional_prompts.append(missing_prompt)
+            additional_dataset = {'input': all_additional_prompts, 'labels': all_missing_positions}
+            batches = create_batches(additional_dataset, batch_size=len(batch[0]))
+            for m, missing_batch in enumerate(batches):
+                if split == "train":
+                    missing_response = self.train_api_request(missing_batch, l=0, model_name=args.model_name_or_path)
+                else:
+                    missing_response = self.complete_gpt3(missing_batch, l=0, model_name=args.model_name_or_path)
+                for idx, missing_ans in enumerate(missing_response['choices']):
+                    which_sentence, which_label = batches['labels'][m][idx]
+                    label_probs[which_sentence,:,which_label] = np.exp(missing_ans['logprobs']['token_logprobs'][-1])
+        assert (label_probs > 0).all(), "all should be populated with non-zero value"
+                
+        if if_null:
+            return label_probs
+        label_probs = label_probs / torch.sum(label_probs, dim=2, keepdim=True)
+        return label_probs
+    
+    def get_label_prob(self, response, chat_obj, label, args):
+        got_the_label = False
+        if label in response.choices[0].logprobs.content[0].token:
+            label_prob = np.exp(response.choices[0].logprobs.content[0].logprob)
+            return label_prob
+        else:
+            missing_response = self.train_api_request(chat_obj, l=1, model_name=args.model_name_or_path, n=1, top_logprob=20)
+            print("the missing label is : ", label)
+            for i in range(20):
+                if label == missing_response.choices[0].logprobs.content[0].top_logprobs[i].token:
+                    label_prob = np.exp(response.logprobs.content[0].logprob)
+                    return label_prob
+        return -10
+
+    def 
+
+
 class ApiCallLimitError(Exception):
     pass
-
-
 
 def prepare_and_load_dataset(args):
     
@@ -178,8 +299,9 @@ def prepare_and_load_dataset(args):
     # specify a unique experiment_id for load_metric() otherwise will cause ERROR when having multiple run on a same server!
     task_name = args.task_name if args.task_name else args.train_file
     args.unique_task_name = task_name.replace("/", ".")
-    args.experiment_id = task_name + str(args.prompt_length) + str(args.prompt_learning_rate) \
-                         + str(args.num_train_epochs) + str(args.seed) + str(args.prompt_search_space) + ce_loss_string #'dataset/CI/train.csv1020.0013042160.01falseFALSE'
+    args.experiment_id = task_name + str(args.prompt_length) + str(args.prompt_learning_rate) +\
+                         str(args.learning_rate) + str(args.num_train_epochs) \
+                         + str(args.seed) + str(args.prompt_search_space) + str(args.std) + ce_loss_string
 
     if args.use_wandb:
         args.group_name = "RoBERTa_BDPL_" + task_name
@@ -237,31 +359,18 @@ def prepare_and_load_dataset(args):
     label_to_id = None
     if args.task_name:
         label_to_id = LABEL2ID_CONFIG[args.task_name]
+        id_to_label = LABEL_CONVERT[args.task_name]
     elif args.file_name:
         label_to_id = LABEL2ID_CONFIG[args.file_name]
-    num_labels = len(label_to_id)
+        id_to_label = LABEL_CONVERT[args.file_name]
+    args.num_labels = len(label_to_id)
 
     # Load pretrained model and tokenizer
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer)
-    config = RobertaConfig.from_pretrained(args.model_name_or_path, num_labels=num_labels)
-
-    # init model
-    model = RobertaForMaskedLM.from_pretrained(
-        args.model_name_or_path,
-        from_tf=bool(".ckpt" in args.model_name_or_path),
-        config=config,
-    )
-    
+    tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=not args.use_slow_tokenizer)
     args.device = torch.device("cuda", args.cuda)
-    model.to(args.device)
 
-    if label_to_id is not None:
-        model.config.label2id = label_to_id
-        model.config.id2label = {id: label for label, id in config.label2id.items()}
-
-    
     prompt_length = args.prompt_length
     hingeloss = MarginLoss(margin=args.margin, target=False)
     ce_loss = CrossEntropyLoss()
@@ -279,11 +388,10 @@ def prepare_and_load_dataset(args):
             else:
                 sentence1_key, sentence2_key = non_label_column_names[0], None
 
-    padding = "max_length" if args.pad_to_max_length else False
+    #padding = "max_length" if args.pad_to_max_length else False
 
     
     def preprocess_function(examples):
-        # Tokenize the texts
         if args.low_resource:
             train_random_samples = random.sample(range(0, len(examples["label"])), len(examples["label"])//10)
             for key in examples.keys():
@@ -300,53 +408,22 @@ def prepare_and_load_dataset(args):
             template_cfg = TEMPLATE_CONFIG[args.task_name]
         elif args.file_name is not None:
             template_cfg = TEMPLATE_CONFIG[args.file_name]
-        template_base = template_cfg.replace('[MASK]', tokenizer.mask_token)
 
-        if sentence2_key:
-            sent1_list = []
-            for sent1 in examples[sentence1_key]:
-                sent1_list.append(sent1 + template_base)
-            texts = (sent1_list, examples[sentence2_key])
+        result= {'input':[]}
+
+        for i in range(len(examples[sentence1_key])):
+            if sentence2_key is None:
+                ori_sent_id = tokenizer.tokenize(examples[sentence1_key][i])[:400]
+                new_sent = tokenizer.convert_tokens_to_string(ori_sent_id)
+                result["input"].append('input: '+ new_sent + template_cfg + "\n" + "output:")
+            else:
+                result["input"].append('input: sentence one: '+ examples[sentence1_key][i] + ' sentence two: ' + examples[sentence2_key][i] + template_cfg + "\n" + "output:")
+
+        if args.task_name or args.file_name in DOMAIN_DATASET:
+            result['labels'] = [id_to_label[x] for x in examples["label"]]
         else:
-            template = [template_base] * len(examples[sentence1_key])
-            texts = (examples[sentence1_key], template)
-        result = tokenizer(*texts, padding=padding, max_length=args.max_length, truncation=True, add_special_tokens=False)
+            result['labels'] = examples["label"]
 
-        texts = []
-        template = [template_base] * len(examples[sentence1_key])
-        if sentence2_key:
-            for tuple_ in list(zip(examples[sentence1_key], template, examples[sentence2_key])):
-                sent_1 = tokenizer.tokenize(tuple_[0])[:200]
-                new_sent_1 = tokenizer.convert_tokens_to_string(sent_1)
-                sent_2 = tokenizer.tokenize(tuple_[2])[:200]
-                new_sent_2 = tokenizer.convert_tokens_to_string(sent_2)
-                texts.append(new_sent_1 + tokenizer.sep_token + new_sent_2 + tuple_[1])
-        else:
-            for tuple_ in list(zip(examples[sentence1_key], template)):
-                sent_1 = tokenizer.tokenize(tuple_[0])[:400]
-                new_sent_1 = tokenizer.convert_tokens_to_string(sent_1)
-                texts.append(new_sent_1 + tuple_[1])
-        result = tokenizer(texts, padding=padding, max_length=args.max_length, truncation=True)
-
-        if args.task_name:
-            label_list = []
-            for raw_label in examples["label"]:
-                label = LABEL_CONVERT[args.task_name][raw_label]
-                target_encodings = tokenizer.encode(str(label).lower(), add_special_tokens=False)
-                label_list.append(target_encodings[0])
-            result["labels"] = torch.tensor(label_list)
-
-        elif args.file_name in DOMAIN_DATASET:
-            label_list = []
-            for raw_label in examples["label"]:
-                label = LABEL_CONVERT[args.file_name][raw_label]
-                target_encodings = tokenizer.encode(str(label).lower(), add_special_tokens=False)
-                label_list.append(target_encodings[0])
-            result["labels"] = torch.tensor(label_list)
-        else:
-            target_encodings = tokenizer.batch_encode_plus(examples["label"], add_special_tokens=False)
-            result["labels"]= torch.tensor(target_encodings['input_ids']).squeeze(dim=1).to(args.device)
-            
         return result
     
     # 
@@ -411,6 +488,16 @@ def prepare_and_load_dataset(args):
                     load_from_cache_file=False,
                     desc="Running tokenizer on dataset",
                 )
+            elif args.task_name == 'qqp':
+                raw_valid_dataset_split = raw_datasets["validation"].train_test_split(test_size=0.025)
+                raw_test_dataset = raw_valid_dataset_split['test']
+                test_dataset = raw_test_dataset.map(
+                    preprocess_function,
+                    batched=True,
+                    remove_columns=raw_datasets["train"].column_names,
+                    load_from_cache_file=False,
+                    desc="Running tokenizer on dataset",
+                )
             else:
                 test_dataset = raw_datasets["validation"].map(
                     preprocess_function,
@@ -448,25 +535,36 @@ def prepare_and_load_dataset(args):
     # Log a few random samples from the training set:
     for index in random.sample(range(len(train_dataset)), 3):
         logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
-
-    # DataLoaders creation:
-    if args.pad_to_max_length:
-        data_collator = default_data_collator
-    else:
-        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=(8 if accelerator.use_fp16 else None))
-
-
-    # split dataset. 
-    train_dataloader = DataLoader(train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size)
-    eval_dataloader = DataLoader(eval_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
-    test_dataloader = DataLoader(test_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
+    
+    train_batches = create_batches(train_dataset, batch_size=args.per_device_train_batch_size, shuffle=True)
+    eval_batches = create_batches(eval_dataset, batch_size=args.per_device_eval_batch_size)
+    test_batches = create_batches(test_dataset, batch_size=args.per_device_eval_batch_size)
     if args.task_name == 'mnli':
-        test_dataloader_mm = DataLoader(test_dataset_mm, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
-        test_dataloader_mm = accelerator.prepare(test_dataloader_mm)
+        test_batches_mm = create_batches(test_dataset_mm, batch_size=args.per_device_eval_batch_size)
+        test_batches_mm = accelerator.prepare(test_batches_mm)
     else:
-        test_dataloader_mm = None
-    model, train_dataloader, eval_dataloader, test_dataloader = accelerator.prepare(model, train_dataloader, eval_dataloader, test_dataloader)
+        test_batches_mm = None
+    eval_batches, test_batches = accelerator.prepare(eval_batches, test_batches)
 
+    # Log a few random samples from the training set:
+    for index in random.sample(range(len(train_dataset)), 3):
+        logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+    
+    train_batches = create_batches(train_dataset, batch_size=args.per_device_train_batch_size, shuffle=True)
+    eval_batches = create_batches(eval_dataset, batch_size=args.per_device_eval_batch_size)
+    test_batches = create_batches(test_dataset, batch_size=args.per_device_eval_batch_size)
+    if args.task_name == 'mnli':
+        test_batches_mm = create_batches(test_dataset_mm, batch_size=args.per_device_eval_batch_size)
+        test_batches_mm = accelerator.prepare(test_batches_mm)
+    else:
+        test_batches_mm = None
+    eval_batches, test_batches = accelerator.prepare(eval_batches, test_batches)
+
+
+    # Note -> the training dataloader needs to be prepared before we grab his length below (cause its length will be shorter in multiprocess)
+    # Scheduler and math around the number of training steps.
+    num_update_steps_per_epoch = math.ceil(len(train_batches['sentence']) / args.gradient_accumulation_steps) # 106
+    args.max_train_steps = args.num_train_epochs * (num_update_steps_per_epoch)
     # Get the metric function
     if args.task_name is not None:
         metric = load_metric("glue", args.task_name, experiment_id=args.experiment_id)
@@ -475,16 +573,12 @@ def prepare_and_load_dataset(args):
     else:
         metric = load_metric('accuracy', args.experiment_id)
 
-    return (accelerator, label_to_id, tokenizer, config, model, prompt_length, metric, ngram_list), \
+    return (accelerator, label_to_id, tokenizer, prompt_length, metric, ngram_list), \
            (hingeloss, ce_loss), \
-           (train_dataset, eval_dataset, test_dataset, data_collator), \
-           (train_dataloader, eval_dataloader, test_dataloader, test_dataloader_mm) \
+           (train_dataset, eval_dataset, test_dataset)
 
 
-@counter
-def train_api_request(model, input_ids=None, attention_mask=None):
-    sequence_output = model(input_ids=input_ids, attention_mask=attention_mask)
-    return sequence_output
+
 
 
 # Split the dataset. 

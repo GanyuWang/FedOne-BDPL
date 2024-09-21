@@ -19,6 +19,7 @@ from transformers import (
     get_scheduler,
     set_seed,
 )
+from accelerate import Accelerator
 from transformers.utils.versions import require_version
 from transformers.models.roberta.configuration_roberta import RobertaConfig
 from transformers.models.roberta.modeling_roberta import RobertaClassificationHead, RobertaForMaskedLM
@@ -29,7 +30,7 @@ import wandb
 from peft import get_peft_config, get_peft_model,  TaskType, PeftType
 from peft import PromptTuningInit, PromptTuningConfig, PrefixTuningConfig, PromptEncoderConfig
 
-from preprocess import train_api_request, ApiCallLimitError, DOMAIN_DATASET, LABEL2ID_CONFIG, constrainScoreByWholeExact
+from preprocess_GPT import ApiCallLimitError, DOMAIN_DATASET, LABEL2ID_CONFIG, constrainScoreByWholeExact, CompleteGPT, create_batches # 1 import complete GPT. delete train_api_request. 
 
 
 from scipy.optimize import minimize
@@ -40,11 +41,13 @@ logger = logging.getLogger(__name__)
 
 
 class ClientBDPL:
-    def __init__(self, args, accelerator, client_partial_train_dataset, data_collator, config, ngram_list):
+    def __init__(self, args, accelerator, client_partial_train_dataset, ngram_list, complete_GPT):
 
+        # GPT
+        self.complete_GPT = complete_GPT
+        # 
         self.hingeloss = MarginLoss(margin=args.margin, target=False)
         self.ce_loss = CrossEntropyLoss()
-        self.config = config
         self.ngram_list = ngram_list
 
         # initialize prompt. 
@@ -62,8 +65,6 @@ class ClientBDPL:
         self.num_local_step = args.num_client_local_step
 
         self.dataset = client_partial_train_dataset  # Local dataset for the client
-        self.train_dataloader = DataLoader(self.dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size)
-        self.train_dataloader = accelerator.prepare(self.train_dataloader)
         self.completed_steps = 0
 
         # label to id
@@ -84,48 +85,51 @@ class ClientBDPL:
         
         # Example training loop
         for _ in range(self.num_local_step):
+            train_batches = create_batches(self.dataset, batch_size=args.per_device_train_batch_size, shuffle=True) # 2 change to add batch. 
+            #train_batches = accelerator.prepare(train_batches)                                                       # 2 
             try:
-                for step, batch in enumerate(self.train_dataloader):
+                for step in range(len(train_batches['sentence'])):                                                      # 3 
                     prompts_dist = torch.distributions.Categorical(self.prompts_probs)
-                    with torch.no_grad():
+                    with torch.no_grad():                                                                                     #4 All modified. 
                         if args.trial and self.completed_steps >= 100:
                             break
-                        bsz = len(batch['input_ids'])             # batch_size. 
-                        label = batch["labels"].to(args.device)
+                        bsz = len(train_batches['sentence'][step])            # batch_size. 
+                        labels = train_batches["labels"][step]
                         loss_list = []
                         prompts_discrete_indices_list = []
                         for k in range(args.sample_size):
                             prompts_discrete_indices = prompts_dist.sample() 
                             prompts_discrete_indices_list.append(prompts_discrete_indices) 
+
                             if args.use_ngram:
-                                prompts_discrete_indices_ngram_list = []
-                                indices_list = prompts_discrete_indices.int().tolist() # 采样的 index. 
+                                prompts_discrete_ngram_list = []
+                                indices_list = prompts_discrete_indices.int().tolist()
                                 for idx in indices_list:
-                                    prompts_discrete_indices_ngram_list.append(self.ngram_list[idx]) 
-                                prompts_discrete_ngram_indices = torch.tensor(prompts_discrete_indices_ngram_list)
-                                cur_input_ids = torch.cat([torch.zeros(bsz, 1, dtype=torch.long).to(args.device), prompts_discrete_ngram_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
+                                    prompts_discrete_ngram_list.append(self.ngram_list[idx])
+                                
+                                prompts_discrete = ' '.join(prompts_discrete_ngram_list)
                             else: 
-                                cur_input_ids = torch.cat([torch.zeros(bsz, 1, dtype=torch.long).to(args.device), prompts_discrete_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1) # CLS + Discrete Prompt + input_ids
-
-                            cur_attention_mask = torch.cat([torch.ones(bsz, 1).to(args.device), torch.ones(bsz, args.prompt_length).to(args.device), batch["attention_mask"][:, 1:]],dim=1) # [0, 1(prompt length), original_attention_mask]
-                            mask_pos = np.where(np.array(cur_input_ids.cpu()) == tokenizer.mask_token_id)     # 找到 mask position. 
-                            mask_pos = torch.tensor(mask_pos[-1]) 
-                            sequence_output = train_api_request(model, input_ids=cur_input_ids, attention_mask=cur_attention_mask)
-
-                            last_hidden_state = sequence_output[0].squeeze()
-                            logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
+                                indices_list = prompts_discrete_indices.int().tolist()
+                                prompts_discrete = tokenizer.decode(indices_list, clean_up_tokenization_spaces=False)
 
                             label_keys = list(self.label_to_id.keys())
-                            label_map = {}
-                            for target in label_keys:
-                                label_map[tokenizer.encode(target, add_special_tokens=False)[0]] = self.label_to_id[target]
+                            converted_target = torch.tensor([self.label_to_id[label] for label in labels])
+
+                            batch = []                                                                                 # 5 batch 的包装方式要重做。
+                            label_probs = []
+                            for i in range(len(train_batches['sentence'][step])): #  change to single one each. 
+                                chat_obj = [{ "role":'user', "content" : prompts_discrete + '\t' + train_batches['sentence'][step][i] }]
+                                label = train_batches['labels'][step][i]
+                                # 
+                                response = self.complete_GPT.train_api_request(chat_obj, l=100, model_name=args.model_name_or_path, n=1)
+                                label_prob = self.complete_GPT.get_label_prob(response, chat_obj, label, args)
+                                batch.append(chat_obj)
+                                label_probs.append(label_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
                             
-                            converted_target = label.clone()
-                            for key, val in label_map.items():
-                                converted_target[label == key] = val
-                            interest_index = list(label_map.keys())
-                            logits = logits[:, interest_index]
+                            #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
+                            logits = torch.tensor(label_probs).squeeze()
                             pred = logits.argmax(dim=-1)
+                            raise Exception(logits)  # 
 
                             if args.ce_loss:
                                 loss = self.ce_loss(logits.view(-1, self.config.num_labels), converted_target)
@@ -133,7 +137,7 @@ class ClientBDPL:
                                 loss = self.hingeloss(logits, converted_target)
                             loss_list.append(loss.item())
 
-                            if train_api_request.count >= args.api_limit:
+                            if self.train_api_request.count >= args.api_limit:
                                 raise ApiCallLimitError()
 
                         loss_avg = sum(loss_list) / args.sample_size
@@ -169,8 +173,9 @@ class ClientBDPL:
                         self.prompt_optimizer.step()
                         constrainScoreByWholeExact(self.prompts_probs)
 
-                        self.completed_steps += 1
-                        if self.completed_steps >= args.max_client_train_steps:
+                        if step % args.gradient_accumulation_steps == 0 or step == len(train_batches['sentence']) - 1:
+                            self.completed_steps += 1
+                        if self.completed_steps >= args.max_train_steps:
                             break
 
             except ApiCallLimitError:

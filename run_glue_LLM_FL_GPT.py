@@ -40,16 +40,13 @@ import csv
 import time
 
 
-from preprocess import prepare_and_load_dataset, train_api_request, split_dataset_among_clients, CSV_log, Tracker, task_to_keys
+from preprocess_GPT import prepare_and_load_dataset, split_dataset_among_clients, CSV_log, Tracker, task_to_keys, create_batches, CompleteGPT
 
 
-from PromptTuningClient.BBT import ClientBBT
-from PromptTuningClient.BDPL import ClientBDPL, evaluateBDPL, testBDPL
-from PromptTuningClient.Gumbel_BDPL import ClientGumbelBDPL, evaluateGumbelBDPL, testGumbelBDPL
-from PromptTuningClient.PrefixTuning import ClientPrefixTuning, evaluatePrefixTuning, testPrefixTuning
-from PromptTuningClient.PromptTuning import ClientPromptTuning, evaluatePromptTuning, testPromptTuning
 
-
+#from PromptTuningClient_GPT.BBT import ClientBBT
+from PromptTuningClient_GPT.BDPL_GPT import ClientBDPL, evaluateBDPL, testBDPL
+#from PromptTuningClient_GPT.Gumbel_BDPL import ClientGumbelBDPL, evaluateGumbelBDPL, testGumbelBDPL
 
 
 def parse_args():
@@ -86,6 +83,10 @@ def parse_args():
     parser.add_argument("--k_shot", default=-1, type=int, help="-1 denotes full-shot")
     parser.add_argument("--use_ngram", default=True, type=bool, help="If True, will extract ngrams and use them.")
     parser.add_argument("--api_limit", type=int, default=8000 , help="The limit of the API request")
+    # GPT
+    parser.add_argument("--openai_model_name", type=str, default="", help="if not none, will be use chatGPT api. ")
+    parser.add_argument("--learning_rate", type=float, default=1e-3, help="Initial learning rate (after the potential warmup period) to use.",)
+    parser.add_argument("--std", type=float, default=0.01)
     # Federated learning
     parser.add_argument("--FL_framework", type=str, default="FedAvg", help="Which Federated Learning Framework: FedAvg, FedSeq")
     parser.add_argument("--num_clients", type=int, default=10 , help="The number of clients in FL.")
@@ -136,16 +137,19 @@ if __name__ == "__main__":
 
     args = parse_args()
 
+    # Add GPT
+    complete_GPT = CompleteGPT()                                                         # 1.1 add compleGPT. 
+
     # prepare log
     csv_log = CSV_log(args.log_file_name)
     tracker = Tracker()
 
     # 0 准备dataset。 
-    info1, info2, info3, info4 = prepare_and_load_dataset(args)
-    accelerator, label_to_id, tokenizer, config, model, prompt_length, metric, ngram_list = info1
+    info1, info2, info3= prepare_and_load_dataset(args)
+    accelerator, label_to_id, tokenizer, prompt_length, metric, ngram_list = info1
     hingeloss, ce_loss = info2
-    train_dataset, eval_dataset, test_dataset, data_collator = info3
-    train_dataloader, eval_dataloader, test_dataloader, test_dataloader_mm = info4
+    train_dataset, eval_dataset, test_dataset = info3
+    #train_dataloader, eval_dataloader, test_dataloader, test_dataloader_mm = info4
 
     # special variables for record. 
     len_entire_train_dataset = len(train_dataset) 
@@ -153,27 +157,6 @@ if __name__ == "__main__":
     eval_results = [] # for record. 
     test_results = []
 
-    # Black-box tuning. 
-    if args.prompt_tuning_method in ["BDPL", "GumbelBDPL", "BBT"]:
-        model.eval()
-        for name, param in model.named_parameters():
-            param.requires_grad = False
-
-    # White-box  Prompt tuning. 
-    elif args.prompt_tuning_method == "prompt-tuning":
-        # Prompt Tuning. Configuration. 
-        peft_config = PromptTuningConfig(
-            task_type=TaskType.CAUSAL_LM,
-            prompt_tuning_init=PromptTuningInit.TEXT,
-            num_virtual_tokens=args.prompt_length,
-            prompt_tuning_init_text="Classify if the tweet is a complaint or not:", # this should be updated! later.
-            tokenizer_name_or_path=args.model_name_or_path,
-        )
-        # local trainable = average theta. 
-        model = get_peft_model(model, peft_config)
-    elif args.prompt_tuning_method == "prefix-tuning":
-        model = PrefixTunedRoberta(args, model, config, args.prompt_length).to(args.device)
-    print(f"The prompt tuning method is: {args.prompt_tuning_method}")
 
     # 1 分割 dataset. 按照样本id 平均分配。
     client_trainset_list = split_dataset_among_clients(train_dataset, args.num_clients, mode="random")
@@ -182,15 +165,12 @@ if __name__ == "__main__":
     client_list = []
     for client_idx in range(args.num_clients):
         if args.prompt_tuning_method == "BBT":
-            client = ClientBBT(args, accelerator, model, client_trainset_list[client_idx], data_collator, config)
+            pass
+        #    client = ClientBBT(args, accelerator, model, client_trainset_list[client_idx], data_collator, config)
         elif args.prompt_tuning_method == "BDPL":
-            client = ClientBDPL(args, accelerator, client_trainset_list[client_idx], data_collator, config, ngram_list)
-        elif args.prompt_tuning_method == "GumbelBDPL":
-            client = ClientGumbelBDPL(args, accelerator, client_trainset_list[client_idx], data_collator, config, ngram_list)
-        elif args.prompt_tuning_method == "prefix-tuning":
-            client = ClientPrefixTuning(args, accelerator, model, client_trainset_list[client_idx], data_collator, config)
-        elif args.prompt_tuning_method == "prompt-tuning":
-            client = ClientPromptTuning(args, accelerator, model, client_trainset_list[client_idx], data_collator, config)
+            client = ClientBDPL(args, accelerator, client_trainset_list[client_idx], ngram_list, complete_GPT)
+        #elif args.prompt_tuning_method == "GumbelBDPL":
+        #    client = ClientGumbelBDPL(args, accelerator, client_trainset_list[client_idx], data_collator, config, ngram_list)
         client_list.append(client) 
 
     # 2 写 FL训练的框架。
@@ -200,13 +180,13 @@ if __name__ == "__main__":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)*0.01
     elif args.prompt_tuning_method == "BBT":
         average_theta = torch.zeros(client_list[0].d)
-    elif args.prompt_tuning_method == "prompt-tuning":
-        average_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
-    elif args.prompt_tuning_method == "prefix-tuning":
-        average_theta = model.trainable_params.clone().detach()
+
     
     # Start the training process. 
     for epoch in range(args.num_train_epochs):
+        train_batches = create_batches(train_dataset, batch_size=args.per_device_train_batch_size, shuffle=True)
+        train_batches = accelerator.prepare(train_batches)
+
         tracker.start_comp_time_tracker()
         if args.FL_framework == "FedAvg":
             # training. 
@@ -214,7 +194,7 @@ if __name__ == "__main__":
             client_dataset_len_list = []
             for client_idx in random.sample(range(args.num_clients), args.num_activated_clients):
                 # Each client train and update.  
-                client_prompts_probs = client_list[client_idx].local_training(args, model, tokenizer, average_theta, tracker)
+                client_prompts_probs = client_list[client_idx].local_training(args, None, tokenizer, average_theta, tracker)
                 client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
                 # get the weight for averaging. 
                 client_dataset_len_nk = client_list[client_idx].get_len_dataset()
@@ -228,45 +208,35 @@ if __name__ == "__main__":
             # Fed Average.
             sampled_client_dataset_len_sum_mt = sum(client_dataset_len_list) 
             average_theta = sum(nk/sampled_client_dataset_len_sum_mt * tensor for nk, tensor in zip(client_dataset_len_list, client_prompts_probs_list)) 
-            if args.prompt_tuning_method == "prompt-tuning":
-                model.prompt_encoder.default.embedding.weight.data = average_theta
-            elif args.prompt_tuning_method == "prefix-tuning":
-                model.trainable_params.data = average_theta 
+
 
         elif args.FL_framework == "FedSeq":
             for client_idx in range(args.num_clients):
-                average_theta = client_list[client_idx].local_training(args, model, tokenizer, average_theta, tracker) #avg
-                if args.prompt_tuning_method == "prompt-tuning":
-                    model.prompt_encoder.default.embedding.weight.data = average_theta
-                elif args.prompt_tuning_method == "prefix-tuning":
-                    model.trainable_params.data = average_theta
+                average_theta = client_list[client_idx].local_training(args, None, tokenizer, average_theta, tracker) #avg
 
-                # calculate the FL communication 
+
+                # calculate the FL communication  
                 tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
                 tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
                 tracker.FL_query_times += 1
 
-
         tracker.stop_comp_time_tracker()
-
+"""
         # Evaluation. base on differen prompt method selected. 
         if args.prompt_tuning_method == "BBT":
-            eval_result = ClientBBT.evaluateBBT(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
+            pass
+        #    eval_result = ClientBBT.evaluateBBT(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
         elif args.prompt_tuning_method == "BDPL":
             eval_result = evaluateBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
-        elif args.prompt_tuning_method == "GumbelBDPL":
-            eval_result = evaluateGumbelBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_alpha=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)   # prompts_alpha
-        elif args.prompt_tuning_method == "prefix-tuning":
-            eval_result = evaluatePrefixTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=average_theta, tokenizer=tokenizer)
-        elif args.prompt_tuning_method == "prompt-tuning":
-            eval_result = evaluatePromptTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
+        #elif args.prompt_tuning_method == "GumbelBDPL":
+        #    eval_result = evaluateGumbelBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_alpha=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)   # prompts_alpha
         else:
             raise Exception("Prompt-tuning method incoorect.")
-       
+        
         row =  [epoch, tracker.comp_time,
                 eval_result, 'val_metric_2',
                 tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 
-                'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", train_api_request.count ]
+                'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", complete_GPT.train_api_request.count ]
         csv_log.append_log(row) 
 
         #print(average_theta)
@@ -277,7 +247,7 @@ if __name__ == "__main__":
             print("best theta")
         if 'cuda' in str(args.device):
             torch.cuda.empty_cache()
-        if train_api_request.count >= args.api_limit:
+        if complete_GPT.train_api_request.count >= args.api_limit:
             break
         print(average_theta[0])
 
@@ -286,22 +256,15 @@ if __name__ == "__main__":
             if eval_result > args.early_stop:
                 break
 
-    if args.prompt_tuning_method == "prompt-tuning":
-        model.prompt_encoder.default.embedding.weight.data.copy_(best_theta.data)
-
-    if args.prompt_tuning_method == "prefix-tuning":
-        model.trainable_params.copy_from(best_theta)
 
     if args.prompt_tuning_method == "BBT":
-        test_result = ClientBBT.testBBT(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
+        pass
+    #    test_result = ClientBBT.testBBT(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
     elif args.prompt_tuning_method == "BDPL":
-        test_result = testBDPL(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
-    elif args.prompt_tuning_method == "GumbelBDPL":
-        test_result = testGumbelBDPL(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_alpha=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)   # prompts_alpha
-    elif args.prompt_tuning_method == "prefix-tuning":
-        test_result = testPrefixTuning(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
-    elif args.prompt_tuning_method == "prompt-tuning":
-        test_result = testPromptTuning(args, model, test_dataloader, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
+        
+        #test_result = testBDPL(args, None, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
+    #elif args.prompt_tuning_method == "GumbelBDPL":
+    #    test_result = testGumbelBDPL(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_alpha=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)   # prompts_alpha
     else:
         raise Exception("Prompt-tuning method incoorect.")
     
@@ -312,3 +275,4 @@ if __name__ == "__main__":
                 'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", train_api_request.count ]
     csv_log.append_log(row)
     print(best_theta)
+"""
