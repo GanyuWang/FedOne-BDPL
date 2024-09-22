@@ -46,7 +46,7 @@ from preprocess_GPT import prepare_and_load_dataset, split_dataset_among_clients
 
 #from PromptTuningClient_GPT.BBT import ClientBBT
 from PromptTuningClient_GPT.BDPL_GPT import ClientBDPL, evaluateBDPL, testBDPL
-#from PromptTuningClient_GPT.Gumbel_BDPL import ClientGumbelBDPL, evaluateGumbelBDPL, testGumbelBDPL
+from PromptTuningClient_GPT.Gumbel_BDPL_GPT import ClientGumbelBDPL, evaluateGumbelBDPL, testGumbelBDPL
 
 
 def parse_args():
@@ -84,7 +84,8 @@ def parse_args():
     parser.add_argument("--use_ngram", default=True, type=bool, help="If True, will extract ngrams and use them.")
     parser.add_argument("--api_limit", type=int, default=8000 , help="The limit of the API request")
     # GPT
-    parser.add_argument("--openai_model_name", type=str, default="", help="if not none, will be use chatGPT api. ")
+    #parser.add_argument("--openai_model_name", type=str, default="", help="if not none, will be use chatGPT api. ")
+    parser.add_argument("--max_tokens", type=int, default=100, help="max_tokens for the openai api. ")
     parser.add_argument("--learning_rate", type=float, default=1e-3, help="Initial learning rate (after the potential warmup period) to use.",)
     parser.add_argument("--std", type=float, default=0.01)
     # Federated learning
@@ -130,6 +131,7 @@ def parse_args():
     # special design for FL. 
     args.k_shot = args.k_shot * args.num_clients  # making each FL hold a k_shot dataset. 
 
+
     return args
 
 
@@ -145,17 +147,17 @@ if __name__ == "__main__":
     tracker = Tracker()
 
     # 0 准备dataset。 
-    info1, info2, info3= prepare_and_load_dataset(args)
+    info1, info2, info3, info4= prepare_and_load_dataset(args)
     accelerator, label_to_id, tokenizer, prompt_length, metric, ngram_list = info1
     hingeloss, ce_loss = info2
     train_dataset, eval_dataset, test_dataset = info3
-    #train_dataloader, eval_dataloader, test_dataloader, test_dataloader_mm = info4
+    train_batches, eval_batches, test_batches = info4
 
     # special variables for record. 
     len_entire_train_dataset = len(train_dataset) 
     best_eval_result = 0
     eval_results = [] # for record. 
-    test_results = []
+    test_results = [] 
 
 
     # 1 分割 dataset. 按照样本id 平均分配。
@@ -169,15 +171,16 @@ if __name__ == "__main__":
         #    client = ClientBBT(args, accelerator, model, client_trainset_list[client_idx], data_collator, config)
         elif args.prompt_tuning_method == "BDPL":
             client = ClientBDPL(args, accelerator, client_trainset_list[client_idx], ngram_list, complete_GPT)
-        #elif args.prompt_tuning_method == "GumbelBDPL":
-        #    client = ClientGumbelBDPL(args, accelerator, client_trainset_list[client_idx], data_collator, config, ngram_list)
+        elif args.prompt_tuning_method == "GumbelBDPL":
+            pass 
+            #client = ClientGumbelBDPL(args, accelerator, client_trainset_list[client_idx], data_collator, config, ngram_list)
         client_list.append(client) 
 
     # 2 写 FL训练的框架。
     if args.prompt_tuning_method == "BDPL":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
     if args.prompt_tuning_method == "GumbelBDPL":
-        average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)*0.01
+        average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)*0.001
     elif args.prompt_tuning_method == "BBT":
         average_theta = torch.zeros(client_list[0].d)
 
@@ -221,15 +224,16 @@ if __name__ == "__main__":
                 tracker.FL_query_times += 1
 
         tracker.stop_comp_time_tracker()
-"""
+
+
         # Evaluation. base on differen prompt method selected. 
         if args.prompt_tuning_method == "BBT":
             pass
-        #    eval_result = ClientBBT.evaluateBBT(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
+            #eval_result = ClientBBT.evaluateBBT(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
         elif args.prompt_tuning_method == "BDPL":
-            eval_result = evaluateBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
-        #elif args.prompt_tuning_method == "GumbelBDPL":
-        #    eval_result = evaluateGumbelBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_alpha=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)   # prompts_alpha
+            eval_result = ClientBDPL.evaluateBDPL(args, eval_batches, metric, ce_loss, accelerator, epoch, best_epoch, best_result, results, prompts_probs=None, prompt_length=None,tokenizer=None, linear_layer=None, prompts=None, prompt_embedding_fc=None, label_to_id=None)
+        elif args.prompt_tuning_method == "GumbelBDPL":
+            eval_result = evaluateGumbelBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_alpha=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)   # prompts_alpha
         else:
             raise Exception("Prompt-tuning method incoorect.")
         
@@ -256,7 +260,7 @@ if __name__ == "__main__":
             if eval_result > args.early_stop:
                 break
 
-
+"""
     if args.prompt_tuning_method == "BBT":
         pass
     #    test_result = ClientBBT.testBBT(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)

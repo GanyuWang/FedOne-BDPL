@@ -97,7 +97,7 @@ LABEL_CONVERT = {
 TEMPLATE_CONFIG = {
     "mnli": " entailment?",
     "qqp": " equivalent?",
-    "sst2": " What is the sentiment?",
+    "sst2": ' What is the sentiment? Only reply me with "great" or "terrible".',
     "mrpc": " equivalent?",
     "cola": " correct?",
     "wnli": " What is the relation?",
@@ -195,12 +195,12 @@ class CompleteGPT():
             project='proj_NxEVtMrlIaSr7NWRw6eeqeZB',
         )
 
-    def complete_gpt3(self, prompt, l, model_name, n=1, top_logprob=1):
+    def complete_gpt3(self, prompt, max_tokens, model_name, n=1, top_logprob=1):
         response = self.client.chat.completions.create(
                     model=model_name,
                     messages=prompt,
                     logprobs=True,
-                    max_tokens=l,
+                    max_tokens=max_tokens,
                     n=n,
                     top_logprobs=top_logprob)
         return response
@@ -227,8 +227,8 @@ class CompleteGPT():
         return response
         """
     @counter
-    def train_api_request(self, prompt, l, model_name, n=1, top_logprob=1):
-        response=self.complete_gpt3(prompt, l, model_name, n=n, top_logprob=top_logprob)
+    def train_api_request(self, prompt, max_tokens, model_name, n=1, top_logprob=1):
+        response=self.complete_gpt3(prompt, max_tokens, model_name, n=n, top_logprob=top_logprob)
         return response
 
     class ApiCallLimitError(Exception):
@@ -269,21 +269,42 @@ class CompleteGPT():
         label_probs = label_probs / torch.sum(label_probs, dim=2, keepdim=True)
         return label_probs
     
-    def get_label_prob(self, response, chat_obj, label, args):
-        got_the_label = False
+    def get_label_prob(self, response, chat_obj, label_keys, args):
+        labels_prob = torch.zeros(len(label_keys))
+
+        for label_index, label in enumerate(label_keys):
+            found_the_label = False
+            print(label)
+            for i in range(len(response.choices[0].logprobs.content)):
+                #print(response.choices[0].logprobs.content[i].token)
+                for j in range(len(response.choices[0].logprobs.content[i].top_logprobs)):
+                    if label == response.choices[0].logprobs.content[i].top_logprobs[j].token:
+                        prob = np.exp(response.choices[0].logprobs.content[0].logprob)
+                        labels_prob[label_index] = prob
+                        found_the_label = True
+                        print(f"found the label: {label} !!!! the prob is {prob}", )
+
+                    if found_the_label: break
+                if found_the_label: break
+            if not found_the_label:
+                print(f"not found the label {label}")
+                labels_prob[label_index] = 0.01
+                        
+        """
         if label in response.choices[0].logprobs.content[0].token:
             label_prob = np.exp(response.choices[0].logprobs.content[0].logprob)
             return label_prob
         else:
-            missing_response = self.train_api_request(chat_obj, l=1, model_name=args.model_name_or_path, n=1, top_logprob=20)
+            missing_response = self.train_api_request(chat_obj, l=100, model_name=args.model_name_or_path, n=1, top_logprob=1)
             print("the missing label is : ", label)
             for i in range(20):
                 if label == missing_response.choices[0].logprobs.content[0].top_logprobs[i].token:
                     label_prob = np.exp(response.logprobs.content[0].logprob)
                     return label_prob
-        return -10
+        """
 
-    def 
+        return labels_prob # a small label. 
+
 
 
 class ApiCallLimitError(Exception):
@@ -546,20 +567,6 @@ def prepare_and_load_dataset(args):
         test_batches_mm = None
     eval_batches, test_batches = accelerator.prepare(eval_batches, test_batches)
 
-    # Log a few random samples from the training set:
-    for index in random.sample(range(len(train_dataset)), 3):
-        logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
-    
-    train_batches = create_batches(train_dataset, batch_size=args.per_device_train_batch_size, shuffle=True)
-    eval_batches = create_batches(eval_dataset, batch_size=args.per_device_eval_batch_size)
-    test_batches = create_batches(test_dataset, batch_size=args.per_device_eval_batch_size)
-    if args.task_name == 'mnli':
-        test_batches_mm = create_batches(test_dataset_mm, batch_size=args.per_device_eval_batch_size)
-        test_batches_mm = accelerator.prepare(test_batches_mm)
-    else:
-        test_batches_mm = None
-    eval_batches, test_batches = accelerator.prepare(eval_batches, test_batches)
-
 
     # Note -> the training dataloader needs to be prepared before we grab his length below (cause its length will be shorter in multiprocess)
     # Scheduler and math around the number of training steps.
@@ -575,7 +582,8 @@ def prepare_and_load_dataset(args):
 
     return (accelerator, label_to_id, tokenizer, prompt_length, metric, ngram_list), \
            (hingeloss, ce_loss), \
-           (train_dataset, eval_dataset, test_dataset)
+           (train_dataset, eval_dataset, test_dataset), \
+           (train_batches, eval_batches, test_batches)
 
 
 

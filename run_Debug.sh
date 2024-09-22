@@ -13,7 +13,7 @@ CUDA_VISIBLE_DEVICES=2 python ./run_glue_LLM_FL_GPT.py \
     --bdpl_gradient_method zero \
     --model_name_or_path gpt-3.5-turbo-0125 \
     --per_device_train_batch_size 128 \
-    --per_device_eval_batch_size 16 \
+    --per_device_eval_batch_size 2 \
     --weight_decay=0.01 --seed=$seed \
     --k_shot 16 --prompt_learning_rate ${prompt_learning_rate} \
     --sample_size 20 --prompt_length ${prompt_length} \
@@ -21,6 +21,7 @@ CUDA_VISIBLE_DEVICES=2 python ./run_glue_LLM_FL_GPT.py \
     --api_limit 80000 --ce_loss True \
     --bbt_population_size ${bbt_population_size} \
     --num_train_epochs 100 \
+    --max_tokens 100 \
     --FL_framework FedAvg --num_clients 100 --num_activated_clients ${ac} --num_client_local_step 1 --max_client_train_steps 8000 \
     --early_stop ${early_stop} \
     --log_file_name TempResult

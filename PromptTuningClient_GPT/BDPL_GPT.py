@@ -121,23 +121,23 @@ class ClientBDPL:
                                 chat_obj = [{ "role":'user', "content" : prompts_discrete + '\t' + train_batches['sentence'][step][i] }]
                                 label = train_batches['labels'][step][i]
                                 # 
-                                response = self.complete_GPT.train_api_request(chat_obj, l=100, model_name=args.model_name_or_path, n=1)
-                                label_prob = self.complete_GPT.get_label_prob(response, chat_obj, label, args)
+                                response = self.complete_GPT.train_api_request(chat_obj, max_tokens=args.max_tokens, model_name=args.model_name_or_path, n=1, top_logprob=10)
+                                labels_prob = self.complete_GPT.get_label_prob(response, chat_obj, label_keys, args)
                                 batch.append(chat_obj)
-                                label_probs.append(label_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
+                                print(labels_prob)   
+                                label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
                             
                             #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
-                            logits = torch.tensor(label_probs).squeeze()
+                            logits = torch.stack(label_probs)   # logit 的结合方式要改。
                             pred = logits.argmax(dim=-1)
-                            raise Exception(logits)  # 
 
                             if args.ce_loss:
-                                loss = self.ce_loss(logits.view(-1, self.config.num_labels), converted_target)
+                                loss = self.ce_loss(logits, converted_target)
                             else:
                                 loss = self.hingeloss(logits, converted_target)
                             loss_list.append(loss.item())
 
-                            if self.train_api_request.count >= args.api_limit:
+                            if self.complete_GPT.train_api_request.count >= args.api_limit:
                                 raise ApiCallLimitError()
 
                         loss_avg = sum(loss_list) / args.sample_size
@@ -184,130 +184,90 @@ class ClientBDPL:
         return self.prompts_probs.clone().detach()
 
 
-def evaluateBDPL(args,  model, eval_dataloader, metric, ce_loss,config, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None):
-    prompts_discrete_indices = prompts_probs.argmax(1)
-
-    if args.use_ngram:
-        prompts_discrete_indices_ngram_list = []
-        indices_list = prompts_discrete_indices.int().tolist()
-        for idx in indices_list:
-            prompts_discrete_indices_ngram_list.append(ngram_list[idx])
-        prompts_discrete_ngram_indices = torch.tensor(prompts_discrete_indices_ngram_list)
-
-    for step, batch in enumerate(eval_dataloader):
-        if args.trial and step >= 100:
-            break
-        bsz = len(batch['input_ids'])
-
-        if args.use_ngram:
-            batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_ngram_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-        else:
-            batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-        batch["attention_mask"] = torch.cat([torch.ones(bsz, prompt_length).to(args.device), batch["attention_mask"]],dim=1)
-
-        mask_pos=np.where(np.array(batch['input_ids'].cpu()) == tokenizer.mask_token_id) 
-        mask_pos = torch.tensor(mask_pos[-1])
-        label_to_id = model.config.label2id 
-
-        sequence_output = model(input_ids=batch['input_ids'], attention_mask=batch["attention_mask"])
-        last_hidden_state = sequence_output[0].squeeze()
-        logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
+    def evaluateBDPL(self, args, eval_batches, metric, ce_loss,config, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None):
         
+        if prompts_probs is not None:
+            prompts_discrete_indices = prompts_probs.argmax(1)
 
-        label = batch["labels"].to(args.device)
-        label_keys = list(label_to_id.keys())
-        label_map = {}
-        for target in label_keys:
-            label_map[tokenizer.encode(target, add_special_tokens=False)[0]] = label_to_id[target]
-        converted_target = label.clone()
-        for key, val in label_map.items():
-            converted_target[label == key] = val
-        interest_index = list(label_map.keys())
-        logits = logits[:, interest_index]
+            if args.use_ngram:
+                prompts_discrete_ngram_list = []
+                indices_list = prompts_discrete_indices.int().tolist()
+                for idx in indices_list:
+                    prompts_discrete_ngram_list.append(ngram_list[idx])
+                prompts_discrete = ' '.join(prompts_discrete_ngram_list)
 
-        eval_loss_c = ce_loss(logits.view(-1, config.num_labels), converted_target)
-        predictions = logits.argmax(dim=-1)
+            else: 
+                indices_list = prompts_discrete_indices.int().tolist()
+                prompts_discrete = tokenizer.decode(indices_list, clean_up_tokenization_spaces=False)
 
-        metric.add_batch(
-            predictions=accelerator.gather(predictions),
-            references=accelerator.gather(converted_target),
-        )
 
-    if args.file_name in DOMAIN_DATASET:
-        eval_metric = metric.compute(average='macro')
-    else:
-        eval_metric = metric.compute()
-
-    logger.info("** eval **")
-    logger.info(f"epoch {epoch}: {eval_metric}")
-
-    if args.task_name == 'cola':
-        key = 'matthews_correlation'
-    elif args.task_name in ['mnli', 'sst2', 'wnli', 'rte', 'qnli'] or args.file_name in ['MR', 'CR']:
-        key = 'accuracy'
-    else:
-        key = 'f1'
-
-    eval_result = eval_metric[key]
-    results.append(eval_result)
-
-    return eval_result
-
-def testBDPL(args, model, test_dataloader, metric, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None, tokenizer=None, test_dataloader_mm=None):
-    if args.task_name == None or args.k_shot >= 0:
-        prompts_discrete_indices = prompts_probs.argmax(1)
-        #raise Exception(prompts_discrete_indices)
-
-        if args.use_ngram:
-            prompts_discrete_indices_ngram_list = []
-            indices_list = prompts_discrete_indices.int().tolist()
-            for idx in indices_list:
-                prompts_discrete_indices_ngram_list.append(ngram_list[idx])
-            prompts_discrete_ngram_indices = torch.tensor(prompts_discrete_indices_ngram_list)
-
-        for step, batch in enumerate(test_dataloader):
+        for step in range(len(eval_batches['sentence'])):
             if args.trial and step >= 100:
                 break
-            bsz = len(batch['input_ids'])
+
+            label = eval_batches["labels"][step]
             
-            if args.use_ngram:
-                batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_ngram_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-                prompt_sample = tokenizer.decode(prompts_discrete_indices_ngram_list)
-            else:
-                batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
-            batch["attention_mask"] = torch.cat([torch.ones(bsz, prompt_length).to(args.device), batch["attention_mask"]],dim=1)
+            if prompts_probs is not None:
+                batch = []
+                for i in range(len(eval_batches['sentence'][step])):
+                    batch.append('Definition: ' + prompts_discrete + '\t' + eval_batches['sentence'][step][i])
 
-            mask_pos = np.where(np.array(batch['input_ids'].cpu()) == tokenizer.mask_token_id) 
-            mask_pos = torch.tensor(mask_pos[-1])
-            label_to_id = model.config.label2id 
-            sequence_output = model(input_ids=batch['input_ids'], attention_mask=batch["attention_mask"])
-            last_hidden_state = sequence_output[0].squeeze()
-            logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
+            else: 
+                batch = eval_batches['sentence']
 
-            label = batch["labels"].to(args.device)
-            label_keys = list(label_to_id.keys())
-            label_map = {}
-            for target in label_keys:
-                label_map[tokenizer.encode(target, add_special_tokens=False)[0]]  = label_to_id[target]
-            converted_target = label.clone()
-            for key, val in label_map.items():
-                converted_target[label == key] = val
-            interest_index = list(label_map.keys())
-            logits = logits[:, interest_index]
+            responses = self.complete_GPT.complete_gpt3(batch, max_tokens=args.max_tokens, model_name=args.model_name_or_path, n=1, top_logprob=10)
 
+            label_keys = list(self.label_to_id.keys())
+
+            converted_target = torch.tensor([self.label_to_id[i] for i in label])
+
+            label_probs = self.complete_GPT.get_label_prob(responses, batch, label_keys, args, if_null = True, split="eval") # logits_only : True 
+            logits = label_probs.squeeze()
+
+            eval_loss_c = ce_loss(logits.view(-1, args.num_labels), converted_target)
             predictions = logits.argmax(dim=-1)
+
+            if len(predictions.shape) == 0: predictions = predictions.unsqueeze(0)
             metric.add_batch(
                 predictions=accelerator.gather(predictions),
                 references=accelerator.gather(converted_target),
             )
-                
-        if args.file_name in DOMAIN_DATASET:
-            test_metric = metric.compute(average='macro')
-        else:
-            test_metric = metric.compute()
 
-        if args.task_name == 'mnli':
-            for step, batch in enumerate(test_dataloader_mm):
+        if args.file_name in DOMAIN_DATASET:
+            eval_metric = metric.compute(average='macro')
+        else:
+            eval_metric = metric.compute()
+
+        logger.info("** eval **")
+        logger.info(f"epoch {epoch}: {eval_metric}")
+
+        if args.task_name == 'cola':
+            key = 'matthews_correlation'
+        elif args.task_name in ['mnli', 'sst2', 'wnli', 'rte', 'qnli'] or args.file_name in ['MR', 'CR']:
+            key = 'accuracy'
+        else:
+            key = 'f1'
+
+        eval_result = eval_metric[key]
+        results.append(eval_result)
+        
+        return eval_result
+
+    def testBDPL(self, args, model, test_dataloader, metric, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None, tokenizer=None, test_dataloader_mm=None):
+        if args.task_name == None or args.k_shot >= 0:
+            prompts_discrete_indices = prompts_probs.argmax(1)
+            #raise Exception(prompts_discrete_indices)
+
+            if args.use_ngram:
+                prompts_discrete_indices_ngram_list = []
+                indices_list = prompts_discrete_indices.int().tolist()
+                for idx in indices_list:
+                    prompts_discrete_indices_ngram_list.append(ngram_list[idx])
+                prompts_discrete_ngram_indices = torch.tensor(prompts_discrete_indices_ngram_list)
+
+            for step, batch in enumerate(test_dataloader):
+                if args.trial and step >= 100:
+                    break
                 bsz = len(batch['input_ids'])
                 
                 if args.use_ngram:
@@ -340,26 +300,66 @@ def testBDPL(args, model, test_dataloader, metric, accelerator, epoch, results, 
                     predictions=accelerator.gather(predictions),
                     references=accelerator.gather(converted_target),
                 )
-            test_metric_mm = metric.compute()
+                    
+            if args.file_name in DOMAIN_DATASET:
+                test_metric = metric.compute(average='macro')
+            else:
+                test_metric = metric.compute()
 
-        if args.task_name == 'cola':
-            key = 'matthews_correlation'
-        elif args.task_name in ['mnli', 'sst2', 'wnli', 'rte', 'qnli'] or args.file_name in ['MR', 'CR']:
-            key = 'accuracy'
-        else:
-            key = 'f1'
-        test_result = test_metric[key]
-        results.append(test_result)
-
-        logger.info("** test **")
-        logger.info(f"epoch {epoch}: {test_metric}")
-        if args.use_wandb:
-            for key in test_metric.keys():
-                eval_key = 'Black_test_' + key
-                wandb.log({eval_key: test_metric[key]})
             if args.task_name == 'mnli':
-                for key in test_metric_mm.keys():
-                    eval_key = 'Black_test_' + key + '_mm'
-                    wandb.log({eval_key: test_metric_mm[key]})
+                for step, batch in enumerate(test_dataloader_mm):
+                    bsz = len(batch['input_ids'])
+                    
+                    if args.use_ngram:
+                        batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_ngram_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
+                        prompt_sample = tokenizer.decode(prompts_discrete_indices_ngram_list)
+                    else:
+                        batch['input_ids'] = torch.cat([torch.zeros(bsz,1, dtype=torch.long).to(args.device), prompts_discrete_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1)
+                    batch["attention_mask"] = torch.cat([torch.ones(bsz, prompt_length).to(args.device), batch["attention_mask"]],dim=1)
 
-        return test_result
+                    mask_pos = np.where(np.array(batch['input_ids'].cpu()) == tokenizer.mask_token_id) 
+                    mask_pos = torch.tensor(mask_pos[-1])
+                    label_to_id = model.config.label2id 
+                    sequence_output = model(input_ids=batch['input_ids'], attention_mask=batch["attention_mask"])
+                    last_hidden_state = sequence_output[0].squeeze()
+                    logits = last_hidden_state[torch.arange(last_hidden_state.size(0)), mask_pos]
+
+                    label = batch["labels"].to(args.device)
+                    label_keys = list(label_to_id.keys())
+                    label_map = {}
+                    for target in label_keys:
+                        label_map[tokenizer.encode(target, add_special_tokens=False)[0]]  = label_to_id[target]
+                    converted_target = label.clone()
+                    for key, val in label_map.items():
+                        converted_target[label == key] = val
+                    interest_index = list(label_map.keys())
+                    logits = logits[:, interest_index]
+
+                    predictions = logits.argmax(dim=-1)
+                    metric.add_batch(
+                        predictions=accelerator.gather(predictions),
+                        references=accelerator.gather(converted_target),
+                    )
+                test_metric_mm = metric.compute()
+
+            if args.task_name == 'cola':
+                key = 'matthews_correlation'
+            elif args.task_name in ['mnli', 'sst2', 'wnli', 'rte', 'qnli'] or args.file_name in ['MR', 'CR']:
+                key = 'accuracy'
+            else:
+                key = 'f1'
+            test_result = test_metric[key]
+            results.append(test_result)
+
+            logger.info("** test **")
+            logger.info(f"epoch {epoch}: {test_metric}")
+            if args.use_wandb:
+                for key in test_metric.keys():
+                    eval_key = 'Black_test_' + key
+                    wandb.log({eval_key: test_metric[key]})
+                if args.task_name == 'mnli':
+                    for key in test_metric_mm.keys():
+                        eval_key = 'Black_test_' + key + '_mm'
+                        wandb.log({eval_key: test_metric_mm[key]})
+
+            return test_result
