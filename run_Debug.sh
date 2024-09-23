@@ -21,7 +21,7 @@ CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL_GPT.py \
     --api_limit 80000 --ce_loss True \
     --bbt_population_size ${bbt_population_size} \
     --num_train_epochs 1 \
-    --max_tokens 50 --top_logprob 10\
+    --max_tokens 12 --top_logprob 4\
     --FL_framework FedAvg --num_clients 2 --num_activated_clients ${ac} --num_client_local_step 1 --max_client_train_steps 8000 \
     --early_stop ${early_stop} \
     --log_file_name TempResult
