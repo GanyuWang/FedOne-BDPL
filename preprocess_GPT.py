@@ -272,7 +272,7 @@ class CompleteGPT():
         labels_prob = torch.zeros(len(label_keys))
         print(chat_obj)
         print(response.choices[0].message.content)
-        for label_index, label in enumerate(label_keys):
+        for label_index, label in enumerate(label_keys):  # 还发现一个问题，有时候会两个label 的prob 一样, 肯定是匹配到了同一个。
             found_the_label = False
             print(f"finding {label}.", end=" ")
             for j in range(len(response.choices[0].logprobs.content[0].top_logprobs)): # for i in range(len(response.choices[0].logprobs.content)):  J first because, we want the top prob first. 
