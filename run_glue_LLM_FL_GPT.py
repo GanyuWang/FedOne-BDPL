@@ -21,12 +21,12 @@ from transformers import (
     set_seed,
 )
 from transformers.utils.versions import require_version
-from transformers.models.roberta.configuration_roberta import RobertaConfig
-from transformers.models.roberta.modeling_roberta import RobertaClassificationHead, RobertaForMaskedLM
-from transformers import RobertaModel
-from torch.nn import CrossEntropyLoss
+#from transformers.models.roberta.configuration_roberta import RobertaConfig
+#from transformers.models.roberta.modeling_roberta import RobertaClassificationHead, RobertaForMaskedLM
+#from transformers import RobertaModel
+#from torch.nn import CrossEntropyLoss
 from loss import *
-import wandb
+#import wandb
 from peft import get_peft_config, get_peft_model,  TaskType, PeftType
 from peft import PromptTuningInit, PromptTuningConfig, PrefixTuningConfig, PromptEncoderConfig
 from PromptTuningClient.PrefixTuning import PrefixTunedRoberta
@@ -43,10 +43,9 @@ import time
 from preprocess_GPT import prepare_and_load_dataset, split_dataset_among_clients, CSV_log, Tracker, task_to_keys, create_batches, CompleteGPT
 
 
-
 #from PromptTuningClient_GPT.BBT import ClientBBT
-from PromptTuningClient_GPT.BDPL_GPT import ClientBDPL, evaluateBDPL, testBDPL
-from PromptTuningClient_GPT.Gumbel_BDPL_GPT import ClientGumbelBDPL, evaluateGumbelBDPL, testGumbelBDPL
+from PromptTuningClient_GPT.BDPL_GPT import ClientBDPL
+#from PromptTuningClient_GPT.Gumbel_BDPL_GPT import ClientGumbelBDPL, evaluateGumbelBDPL, testGumbelBDPL
 
 
 def parse_args():
@@ -83,11 +82,6 @@ def parse_args():
     parser.add_argument("--k_shot", default=-1, type=int, help="-1 denotes full-shot")
     parser.add_argument("--use_ngram", default=True, type=bool, help="If True, will extract ngrams and use them.")
     parser.add_argument("--api_limit", type=int, default=8000 , help="The limit of the API request")
-    # GPT
-    #parser.add_argument("--openai_model_name", type=str, default="", help="if not none, will be use chatGPT api. ")
-    parser.add_argument("--max_tokens", type=int, default=100, help="max_tokens for the openai api. ")
-    parser.add_argument("--learning_rate", type=float, default=1e-3, help="Initial learning rate (after the potential warmup period) to use.",)
-    parser.add_argument("--std", type=float, default=0.01)
     # Federated learning
     parser.add_argument("--FL_framework", type=str, default="FedAvg", help="Which Federated Learning Framework: FedAvg, FedSeq")
     parser.add_argument("--num_clients", type=int, default=10 , help="The number of clients in FL.")
@@ -104,6 +98,12 @@ def parse_args():
     parser.add_argument("--bbt_population_size", type=int, default=20, help="the population size for CMAES in BBT.") #多次采样次数
     # BDPL Gumbel Softmax 
     parser.add_argument("--tau", type=float, default=0.1, help="The temperature of gumbel_softmax")
+    # GPT
+    #parser.add_argument("--openai_model_name", type=str, default="", help="if not none, will be use chatGPT api. ")
+    parser.add_argument("--max_tokens", type=int, default=100, help="max_tokens for the openai api. ")
+    parser.add_argument("--top_logprob", type=int, default=10, help="number of the top log_prob  for the openai api. ")
+    parser.add_argument("--learning_rate", type=float, default=1e-3, help="Initial learning rate (after the potential warmup period) to use.",)
+    parser.add_argument("--std", type=float, default=0.01)
     # Early Stop
     parser.add_argument("--early_stop", type=float, default=-1.0, help="stop when the validation result reach") # 
     # log file. 
@@ -159,6 +159,11 @@ if __name__ == "__main__":
     eval_results = [] # for record. 
     test_results = [] 
 
+    #print(len(train_batches["sentence"]))
+    #print(len(eval_batches["sentence"]))
+    #print(len(test_batches["sentence"]))
+    #raise Exception()
+
 
     # 1 分割 dataset. 按照样本id 平均分配。
     client_trainset_list = split_dataset_among_clients(train_dataset, args.num_clients, mode="random")
@@ -190,6 +195,7 @@ if __name__ == "__main__":
         train_batches = create_batches(train_dataset, batch_size=args.per_device_train_batch_size, shuffle=True)
         train_batches = accelerator.prepare(train_batches)
 
+        print(f"start training epoch {epoch}")
         tracker.start_comp_time_tracker()
         if args.FL_framework == "FedAvg":
             # training. 
@@ -212,7 +218,6 @@ if __name__ == "__main__":
             sampled_client_dataset_len_sum_mt = sum(client_dataset_len_list) 
             average_theta = sum(nk/sampled_client_dataset_len_sum_mt * tensor for nk, tensor in zip(client_dataset_len_list, client_prompts_probs_list)) 
 
-
         elif args.FL_framework == "FedSeq":
             for client_idx in range(args.num_clients):
                 average_theta = client_list[client_idx].local_training(args, None, tokenizer, average_theta, tracker) #avg
@@ -224,16 +229,18 @@ if __name__ == "__main__":
                 tracker.FL_query_times += 1
 
         tracker.stop_comp_time_tracker()
-
+        print(f"End training epoch {epoch}")
+        print("start evaluate. ")
 
         # Evaluation. base on differen prompt method selected. 
         if args.prompt_tuning_method == "BBT":
             pass
             #eval_result = ClientBBT.evaluateBBT(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
         elif args.prompt_tuning_method == "BDPL":
-            eval_result = ClientBDPL.evaluateBDPL(args, eval_batches, metric, ce_loss, accelerator, epoch, best_epoch, best_result, results, prompts_probs=None, prompt_length=None,tokenizer=None, linear_layer=None, prompts=None, prompt_embedding_fc=None, label_to_id=None)
+            eval_result = ClientBDPL.evaluateBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None)
         elif args.prompt_tuning_method == "GumbelBDPL":
-            eval_result = evaluateGumbelBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_alpha=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)   # prompts_alpha
+            pass
+            #eval_result = ClientGumbelBDPL.evaluateBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None)
         else:
             raise Exception("Prompt-tuning method incoorect.")
         
@@ -260,13 +267,15 @@ if __name__ == "__main__":
             if eval_result > args.early_stop:
                 break
 
-"""
+    print("End evaluate. ")
+    print("start test. ")
+
+
     if args.prompt_tuning_method == "BBT":
         pass
     #    test_result = ClientBBT.testBBT(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
     elif args.prompt_tuning_method == "BDPL":
-        
-        #test_result = testBDPL(args, None, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
+        test_result = client.testBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None)
     #elif args.prompt_tuning_method == "GumbelBDPL":
     #    test_result = testGumbelBDPL(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_alpha=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)   # prompts_alpha
     else:
@@ -276,7 +285,6 @@ if __name__ == "__main__":
     row =  [-100, tracker.comp_time,
                 test_result, test_results,
                 tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 
-                'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", train_api_request.count ]
+                'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", complete_GPT.train_api_request.count ]
     csv_log.append_log(row)
     print(best_theta)
-"""

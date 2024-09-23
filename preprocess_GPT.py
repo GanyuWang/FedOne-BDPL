@@ -20,14 +20,14 @@ from transformers import (
     set_seed,
 )
 from transformers.utils.versions import require_version
-from transformers.models.roberta.configuration_roberta import RobertaConfig
-from transformers.models.roberta.modeling_roberta import RobertaClassificationHead, RobertaForMaskedLM
-from transformers import RobertaModel
+#from transformers.models.roberta.configuration_roberta import RobertaConfig
+#from transformers.models.roberta.modeling_roberta import RobertaClassificationHead, RobertaForMaskedLM
+#from transformers import RobertaModel
 from torch.nn import CrossEntropyLoss
 from loss import *
 import wandb
 from peft import get_peft_config, get_peft_model,  TaskType, PeftType
-from peft import PromptTuningInit, PromptTuningConfig, PrefixTuningConfig, PromptEncoderConfig
+#from peft import PromptTuningInit, PromptTuningConfig, PrefixTuningConfig, PromptEncoderConfig
 
 import pandas as pd
 import openai 
@@ -97,7 +97,7 @@ LABEL_CONVERT = {
 TEMPLATE_CONFIG = {
     "mnli": " entailment?",
     "qqp": " equivalent?",
-    "sst2": ' What is the sentiment? Only reply me with "great" or "terrible".',
+    "sst2": ' What is the sentiment? Reply me with either "great" or "terrible".',
     "mrpc": " equivalent?",
     "cola": " correct?",
     "wnli": " What is the relation?",
@@ -274,7 +274,7 @@ class CompleteGPT():
 
         for label_index, label in enumerate(label_keys):
             found_the_label = False
-            print(label)
+            print(label, end=" ")
             for i in range(len(response.choices[0].logprobs.content)):
                 #print(response.choices[0].logprobs.content[i].token)
                 for j in range(len(response.choices[0].logprobs.content[i].top_logprobs)):
@@ -282,12 +282,12 @@ class CompleteGPT():
                         prob = np.exp(response.choices[0].logprobs.content[0].logprob)
                         labels_prob[label_index] = prob
                         found_the_label = True
-                        print(f"found the label: {label} !!!! the prob is {prob}", )
+                        print(f"found the label: {label} !!!! the prob is {prob}", end=" ")
 
                     if found_the_label: break
                 if found_the_label: break
             if not found_the_label:
-                print(f"not found the label {label}")
+                print(f"not found the label {label}", end=" ")
                 labels_prob[label_index] = 0.01
                         
         """
@@ -302,7 +302,7 @@ class CompleteGPT():
                     label_prob = np.exp(response.logprobs.content[0].logprob)
                     return label_prob
         """
-
+        print()
         return labels_prob # a small label. 
 
 
