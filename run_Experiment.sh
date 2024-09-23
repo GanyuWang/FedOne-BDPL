@@ -1,19 +1,19 @@
 ac=1
-prompt_tuning_method=BBT
+prompt_tuning_method=GumbelBDPL
 prompt_learning_rate=3e-5
 prompt_length=20
 bbt_population_size=200
 early_stop=77e-2
 
 
-for seed in {101..120}
+for seed in {101..103}
     do
     echo activated_client_${ac}_seed_${seed}
     CUDA_VISIBLE_DEVICES=2 python ./run_glue_LLM_FL.py \
         --task_name=sst2 \
         --prompt_tuning_method ${prompt_tuning_method} \
         --bdpl_gradient_method zero \
-        --model_name_or_path roberta-base \
+        --model_name_or_path roberta-large \
         --per_device_train_batch_size 128 \
         --per_device_eval_batch_size 16 \
         --weight_decay=0.01 --seed=$seed \

@@ -17,3 +17,6 @@ TempResult.csv
 .vscode/launch.json
 .env
 test_openai.py
+
+tmp/
+tmp*
