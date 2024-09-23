@@ -184,8 +184,8 @@ class ClientBDPL:
 
         return self.prompts_probs.clone().detach()
 
-
-    def evaluateBDPL(self, args, eval_batches, metric, ce_loss,config, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None):
+    
+    def evaluateBDPL(self, args, eval_batches, metric, ce_loss, config, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None):
         
         if prompts_probs is not None:
             prompts_discrete_indices = prompts_probs.argmax(1)
@@ -257,6 +257,7 @@ class ClientBDPL:
         results.append(eval_result)
         
         return eval_result
+
 
     def testBDPL(self, args, test_batches, metric, accelerator, epoch, results, prompts_probs=None, prompt_length=None, tokenizer=None, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None):
         if args.task_name == None or args.k_shot >= 0:

@@ -131,7 +131,6 @@ def parse_args():
     # special design for FL. 
     args.k_shot = args.k_shot * args.num_clients  # making each FL hold a k_shot dataset. 
 
-
     return args
 
 
@@ -159,10 +158,11 @@ if __name__ == "__main__":
     eval_results = [] # for record. 
     test_results = [] 
 
-    #print(len(train_batches["sentence"]))
-    #print(len(eval_batches["sentence"]))
-    #print(len(test_batches["sentence"]))
+    print(len(train_batches["sentence"]))
+    print(len(eval_batches["sentence"]))
+    print(len(test_batches["sentence"]))
     #raise Exception()
+    
 
 
     # 1 分割 dataset. 按照样本id 平均分配。
@@ -195,6 +195,7 @@ if __name__ == "__main__":
         train_batches = create_batches(train_dataset, batch_size=args.per_device_train_batch_size, shuffle=True)
         train_batches = accelerator.prepare(train_batches)
 
+        
         print(f"start training epoch {epoch}")
         tracker.start_comp_time_tracker()
         if args.FL_framework == "FedAvg":
@@ -230,6 +231,7 @@ if __name__ == "__main__":
 
         tracker.stop_comp_time_tracker()
         print(f"End training epoch {epoch}")
+        
         print("start evaluate. ")
 
         # Evaluation. base on differen prompt method selected. 
@@ -237,7 +239,7 @@ if __name__ == "__main__":
             pass
             #eval_result = ClientBBT.evaluateBBT(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
         elif args.prompt_tuning_method == "BDPL":
-            eval_result = ClientBDPL.evaluateBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None)
+            eval_result = client_list[0].evaluateBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length,tokenizer=tokenizer)
         elif args.prompt_tuning_method == "GumbelBDPL":
             pass
             #eval_result = ClientGumbelBDPL.evaluateBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None)
@@ -251,6 +253,7 @@ if __name__ == "__main__":
         csv_log.append_log(row) 
 
         #print(average_theta)
+
 
         if eval_result >= best_eval_result:
             best_eval_result = eval_result
@@ -268,6 +271,7 @@ if __name__ == "__main__":
                 break
 
     print("End evaluate. ")
+    raise Exception("End Evaluation. ")
     print("start test. ")
 
 
@@ -275,7 +279,7 @@ if __name__ == "__main__":
         pass
     #    test_result = ClientBBT.testBBT(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
     elif args.prompt_tuning_method == "BDPL":
-        test_result = client.testBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None)
+        test_result = client_list[0].testBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None)
     #elif args.prompt_tuning_method == "GumbelBDPL":
     #    test_result = testGumbelBDPL(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_alpha=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)   # prompts_alpha
     else:

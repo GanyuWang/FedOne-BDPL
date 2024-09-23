@@ -97,7 +97,7 @@ LABEL_CONVERT = {
 TEMPLATE_CONFIG = {
     "mnli": " entailment?",
     "qqp": " equivalent?",
-    "sst2": ' What is the sentiment? Reply me with either "great" or "terrible".',
+    "sst2": ' What is the sentiment? "great" or "terrible"?',
     "mrpc": " equivalent?",
     "cola": " correct?",
     "wnli": " What is the relation?",
@@ -107,7 +107,6 @@ TEMPLATE_CONFIG = {
     "SE": " What is the relation?",
     "RCT": " What is the role?",
     "HP": " Helpful?",
-    "sst2": " It was ",
     "imdb": " It was .",
     "cr": " It was ",
 }
@@ -271,25 +270,25 @@ class CompleteGPT():
     
     def get_label_prob(self, response, chat_obj, label_keys, args):
         labels_prob = torch.zeros(len(label_keys))
-
+        print(chat_obj)
+        print(response.choices[0].message.content)
         for label_index, label in enumerate(label_keys):
             found_the_label = False
-            print(label, end=" ")
-            for i in range(len(response.choices[0].logprobs.content)):
-                #print(response.choices[0].logprobs.content[i].token)
-                for j in range(len(response.choices[0].logprobs.content[i].top_logprobs)):
-                    if label == response.choices[0].logprobs.content[i].top_logprobs[j].token:
+            print(f"finding {label}.", end=" ")
+            for j in range(len(response.choices[0].logprobs.content[0].top_logprobs)): # for i in range(len(response.choices[0].logprobs.content)):  J first because, we want the top prob first. 
+                for i in range(len(response.choices[0].logprobs.content)): # for j in range(len(response.choices[0].logprobs.content[i].top_logprobs)):
+                    if label[1:].startswith(response.choices[0].logprobs.content[i].top_logprobs[j].token):   # This is tricky, the token for "terrible" is "ter" and "rible". 2) " great"[1:] = "great"
                         prob = np.exp(response.choices[0].logprobs.content[0].logprob)
                         labels_prob[label_index] = prob
                         found_the_label = True
-                        print(f"found the label: {label} !!!! the prob is {prob}", end=" ")
-
+                        print(f"YYY<{label}>YYY", end=" ")
                     if found_the_label: break
                 if found_the_label: break
+            # be careful about the indent. 
             if not found_the_label:
-                print(f"not found the label {label}", end=" ")
+                print(f"xxx<{label}>xxx", end=" ")
                 labels_prob[label_index] = 0.01
-                        
+  
         """
         if label in response.choices[0].logprobs.content[0].token:
             label_prob = np.exp(response.choices[0].logprobs.content[0].logprob)
@@ -436,9 +435,9 @@ def prepare_and_load_dataset(args):
             if sentence2_key is None:
                 ori_sent_id = tokenizer.tokenize(examples[sentence1_key][i])[:400]
                 new_sent = tokenizer.convert_tokens_to_string(ori_sent_id)
-                result["input"].append('input: '+ new_sent + template_cfg + "\n" + "output:")
+                result["input"].append(' input: '+ new_sent + template_cfg + "\n")   # Specific for GPT 3.5.  Delete output. 
             else:
-                result["input"].append('input: sentence one: '+ examples[sentence1_key][i] + ' sentence two: ' + examples[sentence2_key][i] + template_cfg + "\n" + "output:")
+                result["input"].append(' input: sentence one: '+ examples[sentence1_key][i] + ' sentence two: ' + examples[sentence2_key][i] + template_cfg + "\n")
 
         if args.task_name or args.file_name in DOMAIN_DATASET:
             result['labels'] = [id_to_label[x] for x in examples["label"]]

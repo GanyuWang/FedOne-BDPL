@@ -7,7 +7,7 @@ early_stop=78e-2
 
 seed=49
 echo activated_client_${ac}_seed_${seed}
-CUDA_VISIBLE_DEVICES=2 python ./run_glue_LLM_FL_GPT.py \
+CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL_GPT.py \
     --task_name=sst2 \
     --prompt_tuning_method ${prompt_tuning_method} \
     --bdpl_gradient_method zero \
@@ -16,13 +16,13 @@ CUDA_VISIBLE_DEVICES=2 python ./run_glue_LLM_FL_GPT.py \
     --per_device_eval_batch_size 2 \
     --weight_decay=0.01 --seed=$seed \
     --k_shot 16 --prompt_learning_rate ${prompt_learning_rate} \
-    --sample_size 1 --prompt_length ${prompt_length} \
+    --sample_size 2 --prompt_length ${prompt_length} \
     --prompt_search_space 200 \
     --api_limit 80000 --ce_loss True \
     --bbt_population_size ${bbt_population_size} \
     --num_train_epochs 1 \
     --max_tokens 50 --top_logprob 10\
-    --FL_framework FedAvg --num_clients 100 --num_activated_clients ${ac} --num_client_local_step 1 --max_client_train_steps 8000 \
+    --FL_framework FedAvg --num_clients 2 --num_activated_clients ${ac} --num_client_local_step 1 --max_client_train_steps 8000 \
     --early_stop ${early_stop} \
     --log_file_name TempResult
 
