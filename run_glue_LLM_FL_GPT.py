@@ -42,11 +42,9 @@ import time
 
 from preprocess_GPT import prepare_and_load_dataset, split_dataset_among_clients, CSV_log, Tracker, task_to_keys, create_batches, CompleteGPT
 
-
 #from PromptTuningClient_GPT.BBT import ClientBBT
 from PromptTuningClient_GPT.BDPL_GPT import ClientBDPL
 #from PromptTuningClient_GPT.Gumbel_BDPL_GPT import ClientGumbelBDPL, evaluateGumbelBDPL, testGumbelBDPL
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Finetune a transformers model on a text classification task")
@@ -105,7 +103,9 @@ def parse_args():
     parser.add_argument("--learning_rate", type=float, default=1e-3, help="Initial learning rate (after the potential warmup period) to use.",)
     parser.add_argument("--std", type=float, default=0.01)
     # Early Stop
-    parser.add_argument("--early_stop", type=float, default=-1.0, help="stop when the validation result reach") # 
+    parser.add_argument("--early_stop", type=float, default=-1.0, help="stop when the validation result reach")
+    # skip training. 
+    parser.add_argument("--skip_training", type=bool, default=False, help="If you don't want to train") 
     # log file. 
     parser.add_argument("--log_file_name", type=str, default="TempResult", help="log file path." )
     args = parser.parse_args()
@@ -162,7 +162,6 @@ if __name__ == "__main__":
     print(len(eval_batches["sentence"]))
     print(len(test_batches["sentence"]))
     #raise Exception()
-    
 
 
     # 1 分割 dataset. 按照样本id 平均分配。
@@ -189,48 +188,47 @@ if __name__ == "__main__":
     elif args.prompt_tuning_method == "BBT":
         average_theta = torch.zeros(client_list[0].d)
 
-    
     # Start the training process. 
     for epoch in range(args.num_train_epochs):
         train_batches = create_batches(train_dataset, batch_size=args.per_device_train_batch_size, shuffle=True)
         train_batches = accelerator.prepare(train_batches)
-
         
-        print(f"start training epoch {epoch}")
-        tracker.start_comp_time_tracker()
-        if args.FL_framework == "FedAvg":
-            # training. 
-            client_prompts_probs_list = []
-            client_dataset_len_list = []
-            for client_idx in random.sample(range(args.num_clients), args.num_activated_clients):
-                # Each client train and update.  
-                client_prompts_probs = client_list[client_idx].local_training(args, None, tokenizer, average_theta, tracker)
-                client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
-                # get the weight for averaging. 
-                client_dataset_len_nk = client_list[client_idx].get_len_dataset()
-                client_dataset_len_list.append(client_dataset_len_nk) #print("weight: \n", weight)
+        if args.skip_training: pass 
+        else:
+            print(f"start training epoch {epoch}")
+            tracker.start_comp_time_tracker()
+            if args.FL_framework == "FedAvg":
+                # training. 
+                client_prompts_probs_list = []
+                client_dataset_len_list = []
+                for client_idx in random.sample(range(args.num_clients), args.num_activated_clients):
+                    # Each client train and update.  
+                    client_prompts_probs = client_list[client_idx].local_training(args, None, tokenizer, average_theta, tracker)
+                    client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
+                    # get the weight for averaging. 
+                    client_dataset_len_nk = client_list[client_idx].get_len_dataset()
+                    client_dataset_len_list.append(client_dataset_len_nk) #print("weight: \n", weight)
 
-                # calculate the FL communication 
-                tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
-                tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
-                tracker.FL_query_times += 1
+                    # calculate the FL communication 
+                    tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
+                    tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
+                    tracker.FL_query_times += 1
 
-            # Fed Average.
-            sampled_client_dataset_len_sum_mt = sum(client_dataset_len_list) 
-            average_theta = sum(nk/sampled_client_dataset_len_sum_mt * tensor for nk, tensor in zip(client_dataset_len_list, client_prompts_probs_list)) 
+                # Fed Average. 
+                sampled_client_dataset_len_sum_mt = sum(client_dataset_len_list) 
+                average_theta = sum(nk/sampled_client_dataset_len_sum_mt * tensor for nk, tensor in zip(client_dataset_len_list, client_prompts_probs_list)) 
 
-        elif args.FL_framework == "FedSeq":
-            for client_idx in range(args.num_clients):
-                average_theta = client_list[client_idx].local_training(args, None, tokenizer, average_theta, tracker) #avg
+            elif args.FL_framework == "FedSeq":
+                for client_idx in range(args.num_clients):
+                    average_theta = client_list[client_idx].local_training(args, None, tokenizer, average_theta, tracker) #avg
 
+                    # calculate the FL communication 
+                    tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
+                    tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
+                    tracker.FL_query_times += 1
 
-                # calculate the FL communication  
-                tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
-                tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
-                tracker.FL_query_times += 1
-
-        tracker.stop_comp_time_tracker()
-        print(f"End training epoch {epoch}")
+            tracker.stop_comp_time_tracker()
+            print(f"End training epoch {epoch}")
         
         print("start evaluate. ")
 
@@ -251,9 +249,7 @@ if __name__ == "__main__":
                 tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 
                 'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", complete_GPT.train_api_request.count ]
         csv_log.append_log(row) 
-
         #print(average_theta)
-
 
         if eval_result >= best_eval_result:
             best_eval_result = eval_result

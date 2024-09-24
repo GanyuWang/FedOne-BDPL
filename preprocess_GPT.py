@@ -301,10 +301,7 @@ class CompleteGPT():
                     label_prob = np.exp(response.logprobs.content[0].logprob)
                     return label_prob
         """
-        if labels_prob[0] != prob_if_label_not_found and labels_prob[0] == labels_prob[1]:
-            print()
-            raise Exception("same prob")
-        print(labels_prob)
+        print("\n", labels_prob)
         return labels_prob # a small label. 
 
 
