@@ -44,7 +44,7 @@ from preprocess_GPT import prepare_and_load_dataset, split_dataset_among_clients
 
 #from PromptTuningClient_GPT.BBT import ClientBBT
 from PromptTuningClient_GPT.BDPL_GPT import ClientBDPL
-#from PromptTuningClient_GPT.Gumbel_BDPL_GPT import ClientGumbelBDPL, evaluateGumbelBDPL, testGumbelBDPL
+from PromptTuningClient_GPT.GumbelBDPL_GPT import ClientGumbelBDPL, evaluateGumbelBDPL, testGumbelBDPL
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Finetune a transformers model on a text classification task")
@@ -176,8 +176,7 @@ if __name__ == "__main__":
         elif args.prompt_tuning_method == "BDPL":
             client = ClientBDPL(args, accelerator, client_trainset_list[client_idx], ngram_list, complete_GPT)
         elif args.prompt_tuning_method == "GumbelBDPL":
-            pass 
-            #client = ClientGumbelBDPL(args, accelerator, client_trainset_list[client_idx], data_collator, config, ngram_list)
+            client = ClientGumbelBDPL(args, accelerator, client_trainset_list[client_idx], ngram_list, complete_GPT)
         client_list.append(client) 
 
     # 2 写 FL训练的框架。
@@ -206,7 +205,7 @@ if __name__ == "__main__":
                     client_prompts_probs = client_list[client_idx].local_training(args, None, tokenizer, average_theta, tracker)
                     client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
                     # get the weight for averaging. 
-                    client_dataset_len_nk = client_list[client_idx].get_len_dataset()
+                    client_dataset_len_nk = client_list[client_idx].get_len_dataset() 
                     client_dataset_len_list.append(client_dataset_len_nk) #print("weight: \n", weight)
 
                     # calculate the FL communication 
@@ -239,8 +238,7 @@ if __name__ == "__main__":
         elif args.prompt_tuning_method == "BDPL":
             eval_result = client_list[0].evaluateBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length,tokenizer=tokenizer)
         elif args.prompt_tuning_method == "GumbelBDPL":
-            pass
-            #eval_result = ClientGumbelBDPL.evaluateBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None)
+            eval_result = client_list[0].ClientGumbelBDPL.evaluateBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length,tokenizer=tokenizer)
         else:
             raise Exception("Prompt-tuning method incoorect.")
         
@@ -267,7 +265,7 @@ if __name__ == "__main__":
                 break
 
     print("End evaluate. ")
-    raise Exception("End Evaluation. ")
+
     print("start test. ")
 
 
@@ -276,12 +274,12 @@ if __name__ == "__main__":
     #    test_result = ClientBBT.testBBT(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
     elif args.prompt_tuning_method == "BDPL":
         test_result = client_list[0].testBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None)
-    #elif args.prompt_tuning_method == "GumbelBDPL":
-    #    test_result = testGumbelBDPL(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_alpha=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)   # prompts_alpha
+    elif args.prompt_tuning_method == "GumbelBDPL":
+        test_result = client_list[0].testGumbelBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None)   # prompts_alpha
     else:
         raise Exception("Prompt-tuning method incoorect.")
     
-    # add the log for the final. 
+    # add the log for the final.  
     row =  [-100, tracker.comp_time,
                 test_result, test_results,
                 tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 

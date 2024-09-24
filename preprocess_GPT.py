@@ -305,7 +305,6 @@ class CompleteGPT():
         return labels_prob # a small label. 
 
 
-
 class ApiCallLimitError(Exception):
     pass
 

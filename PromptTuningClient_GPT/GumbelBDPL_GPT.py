@@ -29,6 +29,7 @@ from loss import *
 import wandb
 from peft import get_peft_config, get_peft_model,  TaskType, PeftType
 from peft import PromptTuningInit, PromptTuningConfig, PrefixTuningConfig, PromptEncoderConfig
+import torch.nn.functional as F
 
 from preprocess_GPT import ApiCallLimitError, DOMAIN_DATASET, LABEL2ID_CONFIG, constrainScoreByWholeExact, CompleteGPT, create_batches # 1 import complete GPT. delete train_api_request. 
 
@@ -40,7 +41,7 @@ import time
 logger = logging.getLogger(__name__)
 
 
-class ClientBDPL:
+class ClientGumbelBDPL:
     def __init__(self, args, accelerator, client_partial_train_dataset, ngram_list, complete_GPT):
 
         # GPT
@@ -53,11 +54,17 @@ class ClientBDPL:
         # initialize prompt. 
         prompt_search_space = args.prompt_search_space
         prompt_length = args.prompt_length
-        self.prompts_probs = torch.FloatTensor([[1 / prompt_search_space] * prompt_search_space] * prompt_length)
-        self.prompts_probs.requires_grad = True
+        #self.prompts_probs = torch.FloatTensor([[1 / prompt_search_space] * prompt_search_space] * prompt_length)
+        #self.prompts_probs.requires_grad = True
+        # gumbel
+        self.prompts_alpha = torch.FloatTensor([[1 / prompt_search_space] * prompt_search_space] * prompt_length)*0.01
+        # prompts_alpha = torch.FloatTensor([[15.0] * prompt_search_space] * prompt_length)
+        self.prompts_alpha.requires_grad = True
+        self.prompts_probs = F.gumbel_softmax(torch.log(self.prompts_alpha), tau=args.tau)
+
         # 
         self.prompt_optimizer = AdamW([{
-            "params": [self.prompts_probs],
+            "params": [self.prompts_alpha],   # optimize alpha. 
             "weight_decay": args.weight_decay,
         }], lr=args.prompt_learning_rate)
 
@@ -80,8 +87,10 @@ class ClientBDPL:
     def local_training(self, args, model, tokenizer, average_theta, tracker):
 
         # Load the average prompt into the client's model
-        self.prompts_probs.data = average_theta.clone().detach()
-        self.prompts_probs.requires_grad = True
+        #self.prompts_probs.data = average_theta.clone().detach()
+        #self.prompts_probs.requires_grad = True
+        self.prompts_alpha.data = average_theta.clone().detach()
+        self.prompts_alpha.requires_grad = True
         
         # Example training loop
         for _ in range(self.num_local_step):
@@ -90,6 +99,7 @@ class ClientBDPL:
             
             try:
                 for step in range(len(train_batches['sentence'])):                                                      # 3 
+                    self.prompts_probs = F.gumbel_softmax(torch.log(self.prompts_alpha), tau=args.tau)
                     prompts_dist = torch.distributions.Categorical(self.prompts_probs)
                     with torch.no_grad():                                                                                     #4 All modified. 
                         if args.trial and self.completed_steps >= 100:
@@ -145,28 +155,17 @@ class ClientBDPL:
                         
                         self.prompt_optimizer.zero_grad()
 
-                        if args.bdpl_gradient_method == "negative": #一个正其他负。
-                            derivative = (-1 / self.prompts_probs).repeat(args.sample_size, 1, 1)
-                            for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
-                                for i in range(args.prompt_length):
-                                        derivative[k][i][prompts_discrete_indices[i]] *= -1  # 只有一个正。其他负。
-                        elif args.bdpl_gradient_method == "zero": # 一个正其他0.
-                            derivative_1devided_by_p = (1 / self.prompts_probs).repeat(args.sample_size, 1, 1)
-                            derivative = (torch.zeros_like(self.prompts_probs)).repeat(args.sample_size, 1, 1)
-                            for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
-                                for i in range(args.prompt_length):
-                                        derivative[k][i][prompts_discrete_indices[i]] = derivative_1devided_by_p[k][i][prompts_discrete_indices[i]]  # 只有一个正。其他0。
-                        elif args.bdpl_gradient_method == "normalize": # 一个正 其他 - 1/prompt_searching_space * p. 
-                            derivative = (-1 / self.prompts_probs /args.prompt_search_space).repeat(args.sample_size, 1, 1)
-                            for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
-                                for i in range(args.prompt_length):
-                                        derivative[k][i][prompts_discrete_indices[i]] *= -1 * args.prompt_search_space  # 只有一个正 1/p。其他 - 1/p /searching space.
-                        else:
-                            raise Exception("No bdpl_gradient calcualtion selected. ")
+                        # calculate the derivative w.r.t \alpha_{i,j} in Gumbel-softmax. 
+                        derivative = (- self.prompts_probs / (self.prompts_alpha*args.tau)).repeat(args.sample_size, 1, 1)
+                        for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
+                            for i in range(args.prompt_length):  #
+                                derivative[k][i][prompts_discrete_indices[i]] = (1-self.prompts_probs[i][prompts_discrete_indices[i]])/(self.prompts_alpha[i][prompts_discrete_indices[i]]*args.tau)   
+                        
 
-                        self.prompts_probs.grad = torch.zeros_like(self.prompts_probs)
+                        self.prompts_alpha.grad = torch.zeros_like(self.prompts_alpha)
                         for k in range(args.sample_size):
-                            self.prompts_probs.grad += 1 / (args.sample_size - 1) * (loss_list[k] - loss_avg) * derivative[k]
+                            self.prompts_alpha.grad = self.prompts_alpha.grad + (1 / (args.sample_size - 1)) * (loss_list[k] - loss_avg) * derivative[k]
+                        # Gumbel. 
 
                         torch.nn.utils.clip_grad_norm_(self.prompts_probs, 3)
                         
@@ -184,8 +183,9 @@ class ClientBDPL:
         return self.prompts_probs.clone().detach()
 
     
-    def evaluateBDPL(self, args, eval_batches, metric, ce_loss, config, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None,tokenizer=None):
+    def evaluateGumbelBDPL(self, args, eval_batches, metric, ce_loss, config, accelerator, epoch, results, ngram_list, prompts_alpha=None, prompt_length=None,tokenizer=None):
         
+        prompts_probs = F.gumbel_softmax(torch.log(prompts_alpha), tau=args.tau)
         if prompts_probs is not None:
             prompts_discrete_indices = prompts_probs.argmax(1)
 
@@ -258,9 +258,11 @@ class ClientBDPL:
         return eval_result
 
 
-    def testBDPL(self, args, test_batches, metric, accelerator, epoch, results, prompts_probs=None, prompt_length=None, tokenizer=None, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None):
+    def testGumbelBDPL(self, args, test_batches, metric, accelerator, epoch, results, prompts_alpha=None, prompt_length=None, tokenizer=None, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None):
+        
         if args.task_name == None or args.k_shot >= 0:
             if prompts_probs is not None:
+                prompts_probs = F.gumbel_softmax(torch.log(prompts_alpha), tau=args.tau)
                 prompts_discrete_indices = prompts_probs.argmax(1)
 
                 if args.use_ngram:
