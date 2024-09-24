@@ -99,6 +99,7 @@ class ClientGumbelBDPL:
             
             try:
                 for step in range(len(train_batches['sentence'])):                                                      # 3 
+                    self.prompts_alpha.data = torch.clamp(self.prompts_alpha.data, min=1e-15)
                     self.prompts_probs = F.gumbel_softmax(torch.log(self.prompts_alpha), tau=args.tau)
                     prompts_dist = torch.distributions.Categorical(self.prompts_probs)
                     with torch.no_grad():                                                                                     #4 All modified. 
