@@ -1,5 +1,5 @@
 ac=1
-task_name=sst2
+task_name=rte
 prompt_tuning_method=GumbelBDPL
 prompt_learning_rate=3e-5
 prompt_length=20
