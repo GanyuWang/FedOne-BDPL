@@ -44,7 +44,7 @@ from preprocess_GPT import prepare_and_load_dataset, split_dataset_among_clients
 
 #from PromptTuningClient_GPT.BBT import ClientBBT
 from PromptTuningClient_GPT.BDPL_GPT import ClientBDPL
-from PromptTuningClient_GPT.GumbelBDPL_GPT import ClientGumbelBDPL, evaluateGumbelBDPL, testGumbelBDPL
+from PromptTuningClient_GPT.GumbelBDPL_GPT import ClientGumbelBDPL
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Finetune a transformers model on a text classification task")
@@ -105,7 +105,9 @@ def parse_args():
     # Early Stop
     parser.add_argument("--early_stop", type=float, default=-1.0, help="stop when the validation result reach")
     # skip training. 
-    parser.add_argument("--skip_training", type=bool, default=False, help="If you don't want to train") 
+    parser.add_argument("--skip_training", default=False, action="store_true", help="If you don't want to train.") 
+    parser.add_argument("--skip_evaluation", default=False, action="store_true", help="If you don't want to evaluate.") 
+    parser.add_argument("--skip_test", default=False, action="store_true", help="If you don't want to test.") 
     # log file. 
     parser.add_argument("--log_file_name", type=str, default="TempResult", help="log file path." )
     args = parser.parse_args()
@@ -192,7 +194,7 @@ if __name__ == "__main__":
         train_batches = create_batches(train_dataset, batch_size=args.per_device_train_batch_size, shuffle=True)
         train_batches = accelerator.prepare(train_batches)
         
-        if args.skip_training: pass 
+        if args.skip_training: print("skip training...")
         else:
             print(f"start training epoch {epoch}")
             tracker.start_comp_time_tracker()
@@ -229,60 +231,61 @@ if __name__ == "__main__":
             tracker.stop_comp_time_tracker()
             print(f"End training epoch {epoch}")
         
-        print("start evaluate. ")
+        if args.skip_evaluation: print("skip evaluation...")
+        else:
+            print(f" start evaluate. epoch {epoch}")
+            # Evaluation. base on differen prompt method selected. 
+            if args.prompt_tuning_method == "BBT":
+                pass
+                #eval_result = ClientBBT.evaluateBBT(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
+            elif args.prompt_tuning_method == "BDPL":
+                eval_result = client_list[0].evaluateBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length,tokenizer=tokenizer)
+            elif args.prompt_tuning_method == "GumbelBDPL":
+                eval_result = client_list[0].evaluateGumbelBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_alpha=average_theta, prompt_length=prompt_length,tokenizer=tokenizer)
+            else:
+                raise Exception("Prompt-tuning method incoorect.")
+            
+            row =  [epoch, tracker.comp_time,
+                    eval_result, 'val_metric_2',
+                    tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 
+                    'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", complete_GPT.train_api_request.count ]
+            csv_log.append_log(row) 
+            #print(average_theta)
 
-        # Evaluation. base on differen prompt method selected. 
+            if eval_result >= best_eval_result:
+                best_eval_result = eval_result
+                best_theta = average_theta.clone().detach()
+                print("best theta")
+            if 'cuda' in str(args.device):
+                torch.cuda.empty_cache()
+            if complete_GPT.train_api_request.count >= args.api_limit:
+                break
+            print(average_theta[0])
+
+            # early stop. 
+            if args.early_stop > 0:
+                if eval_result > args.early_stop:
+                    break
+            print("End evaluate. ")
+
+    print(f"the skip test is {args.skip_test}")
+    if args.skip_test: print("skip test...")
+    else:
+        print("start test. ")
         if args.prompt_tuning_method == "BBT":
             pass
-            #eval_result = ClientBBT.evaluateBBT(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
+        #    test_result = ClientBBT.testBBT(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
         elif args.prompt_tuning_method == "BDPL":
-            eval_result = client_list[0].evaluateBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length,tokenizer=tokenizer)
+            test_result = client_list[0].testBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None)
         elif args.prompt_tuning_method == "GumbelBDPL":
-            eval_result = client_list[0].ClientGumbelBDPL.evaluateBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length,tokenizer=tokenizer)
+            test_result = client_list[0].testGumbelBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_alpha=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None)   # prompts_alpha
         else:
             raise Exception("Prompt-tuning method incoorect.")
         
-        row =  [epoch, tracker.comp_time,
-                eval_result, 'val_metric_2',
-                tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 
-                'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", complete_GPT.train_api_request.count ]
-        csv_log.append_log(row) 
-        #print(average_theta)
-
-        if eval_result >= best_eval_result:
-            best_eval_result = eval_result
-            best_theta = average_theta.clone().detach()
-            print("best theta")
-        if 'cuda' in str(args.device):
-            torch.cuda.empty_cache()
-        if complete_GPT.train_api_request.count >= args.api_limit:
-            break
-        print(average_theta[0])
-
-        # early stop. 
-        if args.early_stop > 0:
-            if eval_result > args.early_stop:
-                break
-
-    print("End evaluate. ")
-
-    print("start test. ")
-
-
-    if args.prompt_tuning_method == "BBT":
-        pass
-    #    test_result = ClientBBT.testBBT(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
-    elif args.prompt_tuning_method == "BDPL":
-        test_result = client_list[0].testBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None)
-    elif args.prompt_tuning_method == "GumbelBDPL":
-        test_result = client_list[0].testGumbelBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None)   # prompts_alpha
-    else:
-        raise Exception("Prompt-tuning method incoorect.")
-    
-    # add the log for the final.  
-    row =  [-100, tracker.comp_time,
-                test_result, test_results,
-                tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 
-                'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", complete_GPT.train_api_request.count ]
-    csv_log.append_log(row)
-    print(best_theta)
+        # add the log for the final.  
+        row =  [-100, tracker.comp_time,
+                    test_result, test_results,
+                    tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 
+                    'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", complete_GPT.train_api_request.count ]
+        csv_log.append_log(row)
+        print(best_theta)

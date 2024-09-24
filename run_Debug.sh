@@ -1,10 +1,10 @@
 ac=1
-prompt_tuning_method=BDPL
+prompt_tuning_method=GumbelBDPL
 prompt_learning_rate=3e-5
 prompt_length=20
 bbt_population_size=200
 early_stop=90e-2
-skip_training=True
+
 
 seed=49
 echo activated_client_${ac}_seed_${seed}
@@ -25,7 +25,7 @@ CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL_GPT.py \
     --max_tokens 12 --top_logprob 3\
     --FL_framework FedAvg --num_clients 100 --num_activated_clients ${ac} --num_client_local_step 1 --max_client_train_steps 8000 \
     --early_stop ${early_stop} \
-    --skip_training ${skip_training}
-    --log_file_name TempResult
-
+    --skip_training \
+    --log_file_name TempResult 
+# When runing, skip should all be false. 
 
