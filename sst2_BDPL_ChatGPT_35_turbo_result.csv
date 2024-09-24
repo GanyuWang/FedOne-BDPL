@@ -1,0 +1,2 @@
+epoch,comp_time,val_metric_1,val_metric_2,FL_comm_cost_up,FL_comm_cost_down,FL_comm_cost,FL_query_times,LLM_comm_cost_up,LLM_comm_cost_down,LLM_comm_cost,LLM_query_times
+0,70.29151892662048,0.910625,val_metric_2,0.0152587890625,0.0152587890625,0.030517578125,1,LLM_comm_cost_F,LLM_comm_cost_B,LLM_comm_cost,3360
