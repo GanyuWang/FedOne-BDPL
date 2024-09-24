@@ -52,7 +52,7 @@ def parse_args():
     parser.add_argument("--file_name", type=str, default=None, help="The name of the domain-specific task.")
     parser.add_argument("--low_resource", action="store_true")
     parser.add_argument("--ce_loss", type=bool, default=True)
-    parser.add_argument("--sample_size", type=int, default=20, help="IMPORTANT, sample size per batch") # #多次采样次数
+    parser.add_argument("--sample_size", type=int, default=20, help="IMPORTANT, sample size per batch") # 
     parser.add_argument("--prompt_length", type=int, default=6)
     parser.add_argument("--prompt_learning_rate", type=float, default=5e-5)
     parser.add_argument("--prompt_search_space", type=int, default=20)
@@ -60,6 +60,7 @@ def parse_args():
     parser.add_argument("--ckpt_path", type=str, default="./ckpts")
     parser.add_argument("--margin", type=float, default=1)
     parser.add_argument("--trial", action="store_true")
+    parser.add_argument("--trial_step", type=int, default=10)  # add trial step. 
     parser.add_argument("--use_wandb", action="store_false", default=False, help="Whether to run wandb.")
     parser.add_argument("--cuda", type=int, default=0)
     parser.add_argument("--max_length", type=int, default=450, help=(
@@ -163,6 +164,8 @@ if __name__ == "__main__":
     print(len(train_batches["sentence"]))
     print(len(eval_batches["sentence"]))
     print(len(test_batches["sentence"]))
+    print(args.trial)
+    print(args.trial_step)
     #raise Exception()
 
 

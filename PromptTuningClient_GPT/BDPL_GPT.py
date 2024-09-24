@@ -202,7 +202,7 @@ class ClientBDPL:
 
 
         for step in range(len(eval_batches['sentence'])):
-            if args.trial and step >= 100:
+            if args.trial and step >= args.trial_step:
                 break
 
             labels = eval_batches["labels"][step]
@@ -275,7 +275,7 @@ class ClientBDPL:
                     prompts_discrete = tokenizer.decode(indices_list, clean_up_tokenization_spaces=False)
 
             for step in range(len(test_batches['sentence'])):
-                if args.trial and step >= 100:
+                if args.trial and step >= args.trial_step:
                     break
                 labels = test_batches['labels'][step]
 

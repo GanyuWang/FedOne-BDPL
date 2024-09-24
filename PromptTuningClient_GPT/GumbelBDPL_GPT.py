@@ -131,11 +131,10 @@ class ClientGumbelBDPL:
                             for i in range(len(train_batches['sentence'][step])): #  change to single one each. 
                                 chat_obj = [{ "role":'user', "content" : prompts_discrete + '\t' + train_batches['sentence'][step][i] }]
                                 label = train_batches['labels'][step][i]
-                                # 
                                 response = self.complete_GPT.train_api_request(chat_obj, max_tokens=args.max_tokens, model_name=args.model_name_or_path, n=1, top_logprob=args.top_logprob)
                                 labels_prob = self.complete_GPT.get_label_prob(response, chat_obj, label_keys, args)
                                 batch.append(chat_obj)
-                                print(labels_prob)   
+                                #print(labels_prob)   
                                 label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
                             
                             #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
@@ -201,8 +200,10 @@ class ClientGumbelBDPL:
                 prompts_discrete = tokenizer.decode(indices_list, clean_up_tokenization_spaces=False)
 
 
-        for step in range(len(eval_batches['sentence'])):
-            if args.trial and step >= 100:
+        for step in range(len(eval_batches['sentence'])): # 200 batch , 每个batch 16个。
+
+            print(f"evaluate step {step}")
+            if args.trial and step >= args.trial_step:
                 break
 
             labels = eval_batches["labels"][step]
@@ -220,7 +221,6 @@ class ClientGumbelBDPL:
                 response = self.complete_GPT.train_api_request(chat_obj, max_tokens=args.max_tokens, model_name=args.model_name_or_path, n=1, top_logprob=args.top_logprob)
                 labels_prob = self.complete_GPT.get_label_prob(response, chat_obj, label_keys, args)
                 batch.append(chat_obj)
-                print(labels_prob)   
                 label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
             
             #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
@@ -261,7 +261,7 @@ class ClientGumbelBDPL:
     def testGumbelBDPL(self, args, test_batches, metric, accelerator, epoch, results, prompts_alpha=None, prompt_length=None, tokenizer=None, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None):
         
         if args.task_name == None or args.k_shot >= 0:
-            if prompts_probs is not None:
+            if prompts_alpha is not None:
                 prompts_probs = F.gumbel_softmax(torch.log(prompts_alpha), tau=args.tau)
                 prompts_discrete_indices = prompts_probs.argmax(1)
 
@@ -277,7 +277,7 @@ class ClientGumbelBDPL:
                     prompts_discrete = tokenizer.decode(indices_list, clean_up_tokenization_spaces=False)
 
             for step in range(len(test_batches['sentence'])):
-                if args.trial and step >= 100:
+                if args.trial and step >= args.trial_step:
                     break
                 labels = test_batches['labels'][step]
 
