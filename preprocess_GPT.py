@@ -195,13 +195,26 @@ class CompleteGPT():
         )
 
     def complete_gpt3(self, prompt, max_tokens, model_name, n=1, top_logprob=1):
-        response = self.client.chat.completions.create(
-                    model=model_name,
-                    messages=prompt,
-                    logprobs=True,
-                    max_tokens=max_tokens,
-                    n=n,
-                    top_logprobs=top_logprob)
+        response = None
+        received = False
+        wait_time = 1
+        while not received:
+            try:
+                response = self.client.chat.completions.create(
+                            model=model_name,
+                            messages=prompt,
+                            logprobs=True,
+                            max_tokens=max_tokens,
+                            n=n,
+                            top_logprobs=top_logprob)
+                received = True
+                wait_time = wait_time-1
+                if wait_time <= 1: wait_time = 1
+                time.sleep(wait_time)
+            except Exception as error:
+                print("An error occurred:", error) # An error occurred: name 'x' is not defined
+                wait_time += 10
+                time.sleep(wait_time)
         return response
         """
         response = None
@@ -274,7 +287,7 @@ class CompleteGPT():
         print(response.choices[0].message.content)
         for label_index, label in enumerate(label_keys):  
             found_the_label = False
-            print(f"finding {label}.", end=" ")
+            #print(f"finding {label}.", end=" ")
             for j in range(len(response.choices[0].logprobs.content[0].top_logprobs)): # for i in range(len(response.choices[0].logprobs.content)):  J first because, we want the top prob first. 
                 for i in range(len(response.choices[0].logprobs.content)): # for j in range(len(response.choices[0].logprobs.content[i].top_logprobs)):
                     if label[1:].startswith(response.choices[0].logprobs.content[i].top_logprobs[j].token.lower()):   # This is tricky, the token for "terrible" is "ter" and "rible". 2) " great"[1:] = "great"
@@ -581,7 +594,7 @@ def prepare_and_load_dataset(args):
     return (accelerator, label_to_id, tokenizer, prompt_length, metric, ngram_list), \
            (hingeloss, ce_loss), \
            (train_dataset, eval_dataset, test_dataset), \
-           (train_batches, eval_batches, test_batches)
+           (train_batches, eval_batches, test_batches, test_batches_mm) 
 
 
 

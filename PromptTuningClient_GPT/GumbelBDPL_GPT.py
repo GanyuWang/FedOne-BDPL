@@ -103,7 +103,7 @@ class ClientGumbelBDPL:
                     self.prompts_probs = F.gumbel_softmax(torch.log(self.prompts_alpha), tau=args.tau)
                     prompts_dist = torch.distributions.Categorical(self.prompts_probs)
                     with torch.no_grad():                                                                                     #4 All modified. 
-                        if args.trial and self.completed_steps >= 100:
+                        if args.trial and step >= args.trial_step:
                             break
                         bsz = len(train_batches['sentence'][step])            # batch_size. 
                         labels = train_batches["labels"][step]
@@ -137,6 +137,9 @@ class ClientGumbelBDPL:
                                 batch.append(chat_obj)
                                 #print(labels_prob)   
                                 label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
+
+                                #print("the label is ", label)
+                                #raise Exception()
                             
                             #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
                             logits = torch.stack(label_probs)   # logit 的结合方式要改。
@@ -216,6 +219,7 @@ class ClientGumbelBDPL:
             batch = []                                                                                 # 5 batch 的包装方式要重做。
             label_probs = []
             for i in range(len(eval_batches['sentence'][step])): #  change to single one each. 
+
                 chat_obj = [{ "role":'user', "content" : prompts_discrete + '\t' + eval_batches['sentence'][step][i] }]
                 label = eval_batches['labels'][step][i]
                 # 
@@ -223,12 +227,14 @@ class ClientGumbelBDPL:
                 labels_prob = self.complete_GPT.get_label_prob(response, chat_obj, label_keys, args)
                 batch.append(chat_obj)
                 label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
+                
             
             #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
             logits = torch.stack(label_probs)   # logit 的结合方式要改。
             pred = logits.argmax(dim=-1)
             # end. 
 
+            converted_target = converted_target[:len(logits)]  # 增加这个
             eval_loss_c = ce_loss(logits.view(-1, args.num_labels), converted_target)
             predictions = logits.argmax(dim=-1)
 
@@ -318,6 +324,10 @@ class ClientGumbelBDPL:
 
             if args.task_name == 'mnli':
                 for step in range(len(test_batches_mm['sentence'])):
+                    if args.trial and step >= args.trial_step:
+                        break
+                    print(f"step is {step}")
+
                     labels = test_batches_mm['labels'][step]
 
                     # start
@@ -334,7 +344,7 @@ class ClientGumbelBDPL:
                         labels_prob = self.complete_GPT.get_label_prob(response, chat_obj, label_keys, args)
                         batch.append(chat_obj)
                         label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
-                    
+
                     #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
                     logits = torch.stack(label_probs)   # logit 的结合方式要改。
                     predictions = logits.argmax(dim=-1)

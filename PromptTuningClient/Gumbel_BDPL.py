@@ -54,7 +54,7 @@ class ClientGumbelBDPL:
         #self.prompts_probs.requires_grad = True
 
         # gumbel 
-        self.prompts_alpha = torch.FloatTensor([[1 / prompt_search_space] * prompt_search_space] * prompt_length)*0.01
+        self.prompts_alpha = torch.FloatTensor([[1 / prompt_search_space] * prompt_search_space] * prompt_length)
         # prompts_alpha = torch.FloatTensor([[15.0] * prompt_search_space] * prompt_length)
         self.prompts_alpha.requires_grad = True
         self.prompts_probs = F.gumbel_softmax(torch.log(self.prompts_alpha), tau=args.tau)
@@ -95,13 +95,14 @@ class ClientGumbelBDPL:
         for _ in range(self.num_local_step):
             try:
                 for step, batch in enumerate(self.train_dataloader):
+                    self.prompts_alpha.data = torch.clamp(self.prompts_alpha.data, min=1e-15)
                     self.prompts_probs = F.gumbel_softmax(torch.log(self.prompts_alpha), tau=args.tau)
                     prompts_dist = torch.distributions.Categorical(self.prompts_probs)
                     with torch.no_grad():
                         if args.trial and self.completed_steps >= 100:
                             break
                         bsz = len(batch['input_ids'])             # batch_size. 
-                        label = batch["labels"].to(args.device)
+                        label = batch["labels"].to(args.device)   
                         loss_list = []
                         prompts_discrete_indices_list = []
                         for k in range(args.sample_size):
@@ -156,7 +157,6 @@ class ClientGumbelBDPL:
                             for i in range(args.prompt_length):  #
                                 derivative[k][i][prompts_discrete_indices[i]] = (1-self.prompts_probs[i][prompts_discrete_indices[i]])/(self.prompts_alpha[i][prompts_discrete_indices[i]]*args.tau)   
                         
-
                         self.prompts_alpha.grad = torch.zeros_like(self.prompts_alpha)
                         for k in range(args.sample_size):
                             self.prompts_alpha.grad = self.prompts_alpha.grad + (1 / (args.sample_size - 1)) * (loss_list[k] - loss_avg) * derivative[k]
@@ -259,8 +259,9 @@ def testGumbelBDPL(args, model, test_dataloader, metric, accelerator, epoch, res
                 prompts_discrete_indices_ngram_list.append(ngram_list[idx])
             prompts_discrete_ngram_indices = torch.tensor(prompts_discrete_indices_ngram_list)
 
+
         for step, batch in enumerate(test_dataloader):
-            if args.trial and step >= 100:
+            if args.trial and step >= args.trial_step:
                 break
             bsz = len(batch['input_ids'])
             
