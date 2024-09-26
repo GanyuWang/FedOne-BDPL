@@ -92,7 +92,7 @@ class ClientBDPL:
                 for step in range(len(train_batches['sentence'])):                                                      # 3 
                     prompts_dist = torch.distributions.Categorical(self.prompts_probs)
                     with torch.no_grad():                                                                                     #4 All modified. 
-                        if args.trial and self.completed_steps >= 100:
+                        if args.trial and step >= args.trial_step:
                             break
                         bsz = len(train_batches['sentence'][step])            # batch_size. 
                         labels = train_batches["labels"][step]
@@ -315,6 +315,9 @@ class ClientBDPL:
 
             if args.task_name == 'mnli':
                 for step in range(len(test_batches_mm['sentence'])):
+                    if args.trial and step >= args.trial_step:
+                        break
+
                     labels = test_batches_mm['labels'][step]
 
                     # start

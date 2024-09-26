@@ -87,6 +87,7 @@ def parse_args():
     parser.add_argument("--num_activated_clients", type=int, default=10 , help="The number of activated clients in each epoch of FL.")
     parser.add_argument("--num_client_local_step", type=int, default=1000 , help="The number of clients' local update epoch in FL.")
     parser.add_argument("--max_client_train_steps", type=int, default=8000, help="The limit of client's local iteration, per activation")
+    parser.add_argument("--local_api_limit", type=int, default=200 , help="The limit of the API request for each client, training epoch/evaluation/testing")
     # prompt tuning method. 
     parser.add_argument("--prompt_tuning_method", type=str, default="BDPL", help="Which white-box tuning method:BBT, BDPL, prefix-tuning, prompt-tuning, " )
     # BDPL
@@ -153,7 +154,7 @@ if __name__ == "__main__":
     accelerator, label_to_id, tokenizer, prompt_length, metric, ngram_list = info1
     hingeloss, ce_loss = info2
     train_dataset, eval_dataset, test_dataset = info3
-    train_batches, eval_batches, test_batches = info4
+    train_batches, eval_batches, test_batches, test_batches_mm = info4
 
     # special variables for record. 
     len_entire_train_dataset = len(train_dataset) 
@@ -188,7 +189,8 @@ if __name__ == "__main__":
     if args.prompt_tuning_method == "BDPL":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
     if args.prompt_tuning_method == "GumbelBDPL":
-        average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)*0.001
+        average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
+        print(average_theta)
     elif args.prompt_tuning_method == "BBT":
         average_theta = torch.zeros(client_list[0].d)
 
@@ -279,9 +281,9 @@ if __name__ == "__main__":
             pass
         #    test_result = ClientBBT.testBBT(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
         elif args.prompt_tuning_method == "BDPL":
-            test_result = client_list[0].testBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None)
+            test_result = client_list[0].testBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=label_to_id, test_batches_mm=test_batches_mm)
         elif args.prompt_tuning_method == "GumbelBDPL":
-            test_result = client_list[0].testGumbelBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_alpha=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None)   # prompts_alpha
+            test_result = client_list[0].testGumbelBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_alpha=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=label_to_id, test_batches_mm=test_batches_mm)   # prompts_alpha
         else:
             raise Exception("Prompt-tuning method incoorect.")
         
@@ -292,3 +294,4 @@ if __name__ == "__main__":
                     'LLM_comm_cost_F', "LLM_comm_cost_B", "LLM_comm_cost", complete_GPT.train_api_request.count ]
         csv_log.append_log(row)
         print(best_theta)
+        print(torch.sum(best_theta))
