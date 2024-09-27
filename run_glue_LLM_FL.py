@@ -30,8 +30,7 @@ from peft import get_peft_config, get_peft_model,  TaskType, PeftType
 from peft import PromptTuningInit, PromptTuningConfig, PrefixTuningConfig, PromptEncoderConfig
 from PromptTuningClient.PrefixTuning import PrefixTunedRoberta
 
-
-
+import torch.nn.functional as F
 
 from scipy.optimize import minimize
 import csv
@@ -195,9 +194,8 @@ if __name__ == "__main__":
     if args.prompt_tuning_method == "BDPL":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
     if args.prompt_tuning_method == "GumbelBDPL":
-        average_theta = torch.FloatTensor([[15.0] * args.prompt_search_space] * args.prompt_length)
-        # average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
-        # prompts_alpha = torch.FloatTensor([[15.0] * args.prompt_search_space] * prompt_length)
+        average_theta = torch.FloatTensor([[6.0] * args.prompt_search_space] * args.prompt_length)
+        #average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
     elif args.prompt_tuning_method == "BBT":
         average_theta = torch.zeros(client_list[0].d)
     elif args.prompt_tuning_method == "prompt-tuning":
@@ -256,7 +254,7 @@ if __name__ == "__main__":
         elif args.prompt_tuning_method == "BDPL":
             eval_result = evaluateBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
         elif args.prompt_tuning_method == "GumbelBDPL":
-            eval_result = evaluateGumbelBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_alpha=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)   # prompts_alpha
+            eval_result, eval_prompt_prob = evaluateGumbelBDPL(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_alpha=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)   # prompts_alpha
         elif args.prompt_tuning_method == "prefix-tuning":
             eval_result = evaluatePrefixTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=average_theta, tokenizer=tokenizer)
         elif args.prompt_tuning_method == "prompt-tuning":
@@ -264,6 +262,11 @@ if __name__ == "__main__":
         else:
             raise Exception("Prompt-tuning method incoorect.")
         
+
+        a = torch.clamp(average_theta.data, min=1e-15)
+        prb = F.gumbel_softmax(torch.log(a.data), tau=args.tau)
+        print(prb)
+        #raise Exception(prb)
 
         row =  [epoch, tracker.comp_time,
                 eval_result, 'val_metric_2',
@@ -273,9 +276,12 @@ if __name__ == "__main__":
 
         #print(average_theta)
 
+        print(f"eval: {eval_result}")
         if eval_result >= best_eval_result:
             best_eval_result = eval_result
             best_theta = average_theta.clone().detach()
+            if args.prompt_tuning_method == "GumbelBDPL":
+                best_prompt_prob = eval_prompt_prob.clone().detach()
             print("best theta")
         if 'cuda' in str(args.device):
             torch.cuda.empty_cache()
@@ -299,7 +305,7 @@ if __name__ == "__main__":
     elif args.prompt_tuning_method == "BDPL":
         test_result = testBDPL(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
     elif args.prompt_tuning_method == "GumbelBDPL":
-        test_result = testGumbelBDPL(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_alpha=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)   # prompts_alpha
+        test_result = testGumbelBDPL(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_prompt_prob, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)   # prompts_alpha
     elif args.prompt_tuning_method == "prefix-tuning":
         test_result = testPrefixTuning(args, model, test_dataloader, metric, accelerator, epoch, test_results, ngram_list, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
     elif args.prompt_tuning_method == "prompt-tuning":

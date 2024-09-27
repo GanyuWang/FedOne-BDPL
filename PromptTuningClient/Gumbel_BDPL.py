@@ -165,7 +165,7 @@ class ClientGumbelBDPL:
                         #torch.nn.utils.clip_grad_norm_(self.prompts_probs, 3)
                         #self.prompts_alpha.data = torch.clamp(self.prompts_alpha.data, min=1e-15)   # 增加clip。 
                         self.prompt_optimizer.step()
-                        constrainScoreByWholeExact(self.prompts_probs)
+                        #constrainScoreByWholeExact(self.prompts_probs)
 
                         self.completed_steps += 1
                         if self.completed_steps >= args.max_client_train_steps:
@@ -247,11 +247,11 @@ def evaluateGumbelBDPL(args,  model, eval_dataloader, metric, ce_loss,config, ac
     eval_result = eval_metric[key]
     results.append(eval_result)
 
-    return eval_result
+    return eval_result, prompts_probs
 
-def testGumbelBDPL(args, model, test_dataloader, metric, accelerator, epoch, results, ngram_list, prompts_alpha=None, prompt_length=None, tokenizer=None, test_dataloader_mm=None):
+def testGumbelBDPL(args, model, test_dataloader, metric, accelerator, epoch, results, ngram_list, prompts_probs=None, prompt_length=None, tokenizer=None, test_dataloader_mm=None):
     if args.task_name == None or args.k_shot >= 0:
-        prompts_probs = F.gumbel_softmax(torch.log(prompts_alpha), tau=args.tau)
+        #prompts_probs = F.gumbel_softmax(torch.log(prompts_alpha), tau=0.1)
         prompts_discrete_indices = prompts_probs.argmax(1)
         #raise Exception(prompts_discrete_indices)
 

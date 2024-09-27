@@ -1,5 +1,5 @@
 ac=1
-task_name=cola
+task_name=sst2
 prompt_tuning_method=GumbelBDPL
 prompt_learning_rate=1e-3
 prompt_length=20
@@ -16,13 +16,14 @@ CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL.py \
     --model_name_or_path roberta-large \
     --per_device_train_batch_size 128 \
     --per_device_eval_batch_size 16 \
-    --weight_decay=0.01 --seed=$seed \
+    --weight_decay=0 --seed=$seed \
     --k_shot 16 --prompt_learning_rate ${prompt_learning_rate} \
-    --sample_size 5 --prompt_length ${prompt_length} \
-    --prompt_search_space 200 \
+    --sample_size 20 --prompt_length ${prompt_length} \
+    --prompt_search_space 100 \
     --api_limit 8000 --ce_loss True \
     --bbt_population_size ${bbt_population_size} \
-    --num_train_epochs 5 \
+    --num_train_epochs 10 \
+    --tau 0.1 \
     --FL_framework FedAvg --num_clients 100 --num_activated_clients ${ac} --num_client_local_step 10 --max_client_train_steps 8000 \
     --early_stop ${early_stop} \
     --log_file_name TempResult 
