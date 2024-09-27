@@ -198,6 +198,7 @@ if __name__ == "__main__":
         print(average_theta)
     elif args.prompt_tuning_method == "BBT":
         average_theta = torch.zeros(client_list[0].d)
+    best_theta = average_theta.clone().detach()
 
     # Start the training process. 
     for epoch in range(args.num_train_epochs):

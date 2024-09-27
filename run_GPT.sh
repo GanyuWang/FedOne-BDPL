@@ -1,5 +1,5 @@
 ac=1
-task_name=cola
+task_name=qqp
 prompt_tuning_method=GumbelBDPL
 prompt_learning_rate=1e-3
 prompt_length=20

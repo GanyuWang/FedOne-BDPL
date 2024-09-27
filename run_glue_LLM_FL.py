@@ -202,7 +202,7 @@ if __name__ == "__main__":
         average_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
     elif args.prompt_tuning_method == "prefix-tuning":
         average_theta = model.trainable_params.clone().detach()
-    # best_theta = average_theta
+    best_theta = average_theta.clone().detach() # initilize the best_theta. 
     
     # Start the training process. 
     for epoch in range(args.num_train_epochs):
