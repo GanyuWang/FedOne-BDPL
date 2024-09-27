@@ -245,7 +245,7 @@ if __name__ == "__main__":
             elif args.prompt_tuning_method == "BDPL":
                 eval_result = client_list[0].evaluateBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length,tokenizer=tokenizer)
             elif args.prompt_tuning_method == "GumbelBDPL":
-                eval_result = client_list[0].evaluateGumbelBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_alpha=average_theta, prompt_length=prompt_length,tokenizer=tokenizer)
+                eval_result, eval_prompt_prob  = client_list[0].evaluateGumbelBDPL(args, eval_batches, metric, ce_loss, args, accelerator, epoch, eval_results, ngram_list, prompts_alpha=average_theta, prompt_length=prompt_length,tokenizer=tokenizer)
             else:
                 raise Exception("Prompt-tuning method incoorect.")
             
@@ -259,6 +259,8 @@ if __name__ == "__main__":
             if eval_result >= best_eval_result:
                 best_eval_result = eval_result
                 best_theta = average_theta.clone().detach()
+                if args.prompt_tuning_method == "GumbelBDPL":
+                    best_prompt_prob = eval_prompt_prob.clone().detach()
                 print("best theta")
             if 'cuda' in str(args.device):
                 torch.cuda.empty_cache()
@@ -282,7 +284,7 @@ if __name__ == "__main__":
         elif args.prompt_tuning_method == "BDPL":
             test_result = client_list[0].testBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=label_to_id, test_batches_mm=test_batches_mm)
         elif args.prompt_tuning_method == "GumbelBDPL":
-            test_result = client_list[0].testGumbelBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_alpha=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=label_to_id, test_batches_mm=test_batches_mm)   # prompts_alpha
+            test_result = client_list[0].testGumbelBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_prompt_prob, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=label_to_id, test_batches_mm=test_batches_mm)   # prompts_alpha
         else:
             raise Exception("Prompt-tuning method incoorect.")
         

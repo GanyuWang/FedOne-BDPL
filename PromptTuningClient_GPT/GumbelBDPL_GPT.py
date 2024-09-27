@@ -262,14 +262,13 @@ class ClientGumbelBDPL:
         eval_result = eval_metric[key]
         results.append(eval_result)
         
-        return eval_result
+        return eval_result, prompts_probs
 
 
-    def testGumbelBDPL(self, args, test_batches, metric, accelerator, epoch, results, prompts_alpha=None, prompt_length=None, tokenizer=None, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None):
+    def testGumbelBDPL(self, args, test_batches, metric, accelerator, epoch, results, prompts_probs=None, prompt_length=None, tokenizer=None, linear_layer=None, prompts=None, label_to_id=None, test_batches_mm=None):
         
         if args.task_name == None or args.k_shot >= 0:
-            if prompts_alpha is not None:
-                prompts_probs = F.gumbel_softmax(torch.log(prompts_alpha), tau=args.tau)
+            if prompts_probs is not None:
                 prompts_discrete_indices = prompts_probs.argmax(1)
 
                 if args.use_ngram:
