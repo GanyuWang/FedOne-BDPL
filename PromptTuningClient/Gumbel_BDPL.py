@@ -59,9 +59,9 @@ class ClientGumbelBDPL:
         self.prompts_probs = F.gumbel_softmax(torch.log(self.prompts_alpha), tau=args.tau)
 
         # 
-        self.prompt_optimizer = SGD([{
+        self.prompt_optimizer = AdamW([{
             "params": [self.prompts_alpha],   # optimize alpha. 
-            "weight_decay": args.weight_decay,
+            "weight_decay": args.weight_decay,  #0
         }], lr=args.prompt_learning_rate)
 
         # FL parameter. 

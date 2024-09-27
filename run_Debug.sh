@@ -1,7 +1,7 @@
 ac=1
-task_name=sst2
-prompt_tuning_method=GumbelBDPL
-prompt_learning_rate=1e-3
+task_name=cola
+prompt_tuning_method=BDPL
+prompt_learning_rate=1e-4
 prompt_length=20
 bbt_population_size=200
 early_stop=90e-2
@@ -13,7 +13,7 @@ CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL.py \
     --task_name=${task_name} \
     --prompt_tuning_method ${prompt_tuning_method} \
     --bdpl_gradient_method zero \
-    --model_name_or_path roberta-large \
+    --model_name_or_path roberta-base \
     --per_device_train_batch_size 128 \
     --per_device_eval_batch_size 16 \
     --weight_decay=0 --seed=$seed \
