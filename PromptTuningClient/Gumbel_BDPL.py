@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 import transformers
 from accelerate import Accelerator
-from torch.optim import Adam, AdamW
+from torch.optim import Adam, AdamW, SGD
 from transformers import (
     AutoTokenizer,
     DataCollatorWithPadding,
@@ -55,12 +55,11 @@ class ClientGumbelBDPL:
 
         # gumbel 
         self.prompts_alpha = torch.FloatTensor([[1 / prompt_search_space] * prompt_search_space] * prompt_length)
-        # prompts_alpha = torch.FloatTensor([[15.0] * prompt_search_space] * prompt_length)
         self.prompts_alpha.requires_grad = True
         self.prompts_probs = F.gumbel_softmax(torch.log(self.prompts_alpha), tau=args.tau)
 
         # 
-        self.prompt_optimizer = AdamW([{
+        self.prompt_optimizer = SGD([{
             "params": [self.prompts_alpha],   # optimize alpha. 
             "weight_decay": args.weight_decay,
         }], lr=args.prompt_learning_rate)
@@ -151,12 +150,14 @@ class ClientGumbelBDPL:
                         
                         self.prompt_optimizer.zero_grad()
 
+                        
                         # calculate the derivative w.r.t \alpha_{i,j} in Gumbel-softmax. 
-                        derivative = (- self.prompts_probs / (self.prompts_alpha*args.tau)).repeat(args.sample_size, 1, 1)
+                        derivative = (- self.prompts_probs / (self.prompts_alpha*args.tau)).repeat(args.sample_size, 1, 1)   # [5, 20, 200], -0 ~ -2000
+                        
                         for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
                             for i in range(args.prompt_length):  #
                                 derivative[k][i][prompts_discrete_indices[i]] = (1-self.prompts_probs[i][prompts_discrete_indices[i]])/(self.prompts_alpha[i][prompts_discrete_indices[i]]*args.tau)   
-                        
+
                         self.prompts_alpha.grad = torch.zeros_like(self.prompts_alpha)
                         for k in range(args.sample_size):
                             self.prompts_alpha.grad = self.prompts_alpha.grad + (1 / (args.sample_size - 1)) * (loss_list[k] - loss_avg) * derivative[k]
@@ -169,6 +170,7 @@ class ClientGumbelBDPL:
                         self.completed_steps += 1
                         if self.completed_steps >= args.max_client_train_steps:
                             break
+                
 
             except ApiCallLimitError:
                 pass

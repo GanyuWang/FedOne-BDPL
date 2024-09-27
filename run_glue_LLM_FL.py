@@ -195,7 +195,9 @@ if __name__ == "__main__":
     if args.prompt_tuning_method == "BDPL":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
     if args.prompt_tuning_method == "GumbelBDPL":
-        average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)*0.01
+        average_theta = torch.FloatTensor([[15.0] * args.prompt_search_space] * args.prompt_length)
+        # average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
+        # prompts_alpha = torch.FloatTensor([[15.0] * args.prompt_search_space] * prompt_length)
     elif args.prompt_tuning_method == "BBT":
         average_theta = torch.zeros(client_list[0].d)
     elif args.prompt_tuning_method == "prompt-tuning":
@@ -245,9 +247,9 @@ if __name__ == "__main__":
                 tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
                 tracker.FL_query_times += 1
 
-
         tracker.stop_comp_time_tracker()
 
+        
         # Evaluation. base on differen prompt method selected. 
         if args.prompt_tuning_method == "BBT":
             eval_result = ClientBBT.evaluateBBT(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, ngram_list, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
@@ -261,7 +263,8 @@ if __name__ == "__main__":
             eval_result = evaluatePromptTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
         else:
             raise Exception("Prompt-tuning method incoorect.")
-       
+        
+
         row =  [epoch, tracker.comp_time,
                 eval_result, 'val_metric_2',
                 tracker.FL_comm_cost_up, tracker.FL_comm_cost_down, tracker.FL_comm_cost(), tracker.FL_query_times, 
@@ -278,7 +281,7 @@ if __name__ == "__main__":
             torch.cuda.empty_cache()
         if train_api_request.count >= args.api_limit:
             break
-        print(average_theta[0])
+        #print(average_theta[0])
 
         # early stop. 
         if args.early_stop > 0:

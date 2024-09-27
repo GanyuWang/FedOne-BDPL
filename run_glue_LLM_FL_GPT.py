@@ -169,7 +169,6 @@ if __name__ == "__main__":
     print(args.trial_step)
     #raise Exception()
 
-
     # 1 分割 dataset. 按照样本id 平均分配。
     client_trainset_list = split_dataset_among_clients(train_dataset, args.num_clients, mode="random")
 

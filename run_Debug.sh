@@ -1,14 +1,14 @@
 ac=1
 task_name=cola
 prompt_tuning_method=GumbelBDPL
-prompt_learning_rate=1e-5
+prompt_learning_rate=1e-3
 prompt_length=20
 bbt_population_size=200
 early_stop=90e-2
 
 
 seed=49
-echo activated_client_${ac}_seed_${seed}
+echo ${task_name}_${prompt_tuning_method}_
 CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL.py \
     --task_name=${task_name} \
     --prompt_tuning_method ${prompt_tuning_method} \
