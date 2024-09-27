@@ -103,7 +103,7 @@ class ClientGumbelBDPL:
                     self.prompts_probs = F.gumbel_softmax(torch.log(self.prompts_alpha), tau=args.tau)
                     prompts_dist = torch.distributions.Categorical(self.prompts_probs)
                     with torch.no_grad():                                                                                     #4 All modified. 
-                        if args.trial and step >= args.trial_step:
+                        if args.trial and step >= args.train_trial_step:
                             break
                         bsz = len(train_batches['sentence'][step])            # batch_size. 
                         labels = train_batches["labels"][step]
@@ -207,7 +207,7 @@ class ClientGumbelBDPL:
         for step in range(len(eval_batches['sentence'])): # 200 batch , 每个batch 16个。
 
             print(f"evaluate step {step}")
-            if args.trial and step >= args.trial_step:
+            if args.trial and step >= args.eval_trial_step:
                 break
 
             labels = eval_batches["labels"][step]
@@ -283,7 +283,7 @@ class ClientGumbelBDPL:
                     prompts_discrete = tokenizer.decode(indices_list, clean_up_tokenization_spaces=False)
 
             for step in range(len(test_batches['sentence'])):
-                if args.trial and step >= args.trial_step:
+                if args.trial and step >= args.test_trial_step:
                     break
                 labels = test_batches['labels'][step]
 

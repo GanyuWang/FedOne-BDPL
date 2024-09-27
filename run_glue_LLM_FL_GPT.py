@@ -59,8 +59,6 @@ def parse_args():
     parser.add_argument("--num_train_epochs", type=int, default=30, help="Total number of training epochs to perform.")
     parser.add_argument("--ckpt_path", type=str, default="./ckpts")
     parser.add_argument("--margin", type=float, default=1)
-    parser.add_argument("--trial", action="store_true")
-    parser.add_argument("--trial_step", type=int, default=10)  # add trial step. 
     parser.add_argument("--use_wandb", action="store_false", default=False, help="Whether to run wandb.")
     parser.add_argument("--cuda", type=int, default=0)
     parser.add_argument("--max_length", type=int, default=450, help=(
@@ -109,7 +107,12 @@ def parse_args():
     # skip training. 
     parser.add_argument("--skip_training", default=False, action="store_true", help="If you don't want to train.") 
     parser.add_argument("--skip_evaluation", default=False, action="store_true", help="If you don't want to evaluate.") 
-    parser.add_argument("--skip_test", default=False, action="store_true", help="If you don't want to test.") 
+    parser.add_argument("--skip_test", default=False, action="store_true", help="If you don't want to test.")    
+    # trial step 
+    parser.add_argument("--trial", action="store_true")
+    parser.add_argument("--train_trial_step", type=int, default=10)  # add trial step. 
+    parser.add_argument("--eval_trial_step", type=int, default=10)  # add trial step. 
+    parser.add_argument("--test_trial_step", type=int, default=10)  # add trial step. 
     # log file. 
     parser.add_argument("--log_file_name", type=str, default="TempResult", help="log file path." )
     args = parser.parse_args()
@@ -166,7 +169,9 @@ if __name__ == "__main__":
     print(len(eval_batches["sentence"]))
     print(len(test_batches["sentence"]))
     print(args.trial)
-    print(args.trial_step)
+    print(args.train_trial_step)
+    print(args.eval_trial_step)
+    print(args.test_trial_step)
     #raise Exception()
 
     # 1 分割 dataset. 按照样本id 平均分配。
@@ -188,7 +193,8 @@ if __name__ == "__main__":
     if args.prompt_tuning_method == "BDPL":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
     if args.prompt_tuning_method == "GumbelBDPL":
-        average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
+        #average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
+        average_theta = torch.FloatTensor([[2.0] * args.prompt_search_space] * args.prompt_length)
         print(average_theta)
     elif args.prompt_tuning_method == "BBT":
         average_theta = torch.zeros(client_list[0].d)

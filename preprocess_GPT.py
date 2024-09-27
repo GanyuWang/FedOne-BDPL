@@ -193,11 +193,12 @@ class CompleteGPT():
             organization='org-c7dvGJnfkgmvqXizttGUqcfr',
             project='proj_NxEVtMrlIaSr7NWRw6eeqeZB',
         )
+        self.wait_time = 1
 
     def complete_gpt3(self, prompt, max_tokens, model_name, n=1, top_logprob=1):
         response = None
         received = False
-        wait_time = 1
+        
         while not received:
             try:
                 response = self.client.chat.completions.create(
@@ -208,13 +209,13 @@ class CompleteGPT():
                             n=n,
                             top_logprobs=top_logprob)
                 received = True
-                wait_time = wait_time-1
-                if wait_time <= 1: wait_time = 1
-                time.sleep(wait_time)
+                self.wait_time = self.wait_time-1
+                if self.wait_time <= 0: self.wait_time = 0.2
+                time.sleep(self.wait_time)
             except Exception as error:
                 print("An error occurred:", error) # An error occurred: name 'x' is not defined
-                wait_time += 10
-                time.sleep(wait_time)
+                self.wait_time += 10
+                time.sleep(self.wait_time)
         return response
         """
         response = None
@@ -294,12 +295,12 @@ class CompleteGPT():
                         prob = np.exp(response.choices[0].logprobs.content[i].top_logprobs[j].logprob)
                         labels_prob[label_index] = prob
                         found_the_label = True
-                        print(f"YYY<{label}>YYY, [{response.choices[0].logprobs.content[i].top_logprobs[j].token}], i={i}, j={j}, prob={prob} ", end=" ")
+                        #print(f"YYY<{label}>YYY, [{response.choices[0].logprobs.content[i].top_logprobs[j].token}], i={i}, j={j}, prob={prob} ", end=" ")
                     if found_the_label: break
                 if found_the_label: break
             # be careful about the indent. 
             if not found_the_label:
-                print(f"xxx<{label}>xxx", end=" ")
+                #print(f"xxx<{label}>xxx", end=" ")
                 labels_prob[label_index] = prob_if_label_not_found # small probl
   
         """
