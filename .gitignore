@@ -10,6 +10,8 @@ run_Experiment*.sh
 run_Debug.sh
 *.sh
 TempResult.csv
+tmp*
+*.out
 .nfs00000000043a5ee90000000f
 .vscode/launch.json
 .env
