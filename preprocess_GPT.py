@@ -190,8 +190,8 @@ from openai import OpenAI
 class CompleteGPT():
     def __init__(self):
         self.client = OpenAI(
-            organization='org-c7dvGJnfkgmvqXizttGUqcfr',
-            project='proj_NxEVtMrlIaSr7NWRw6eeqeZB',
+            #organization='org-c7dvGJnfkgmvqXizttGUqcfr',
+            #project='proj_NxEVtMrlIaSr7NWRw6eeqeZB',
         )
         self.wait_time = 1
 
@@ -210,10 +210,10 @@ class CompleteGPT():
                             top_logprobs=top_logprob)
                 received = True
                 self.wait_time = self.wait_time-1
-                if self.wait_time <= 0: self.wait_time = 0.2
+                if self.wait_time <= 0: self.wait_time = 0.6
                 time.sleep(self.wait_time)
-            except Exception as error:
-                print("An error occurred:", error) # An error occurred: name 'x' is not defined
+            except openai.RateLimitError as e:
+                print("An rate limit error occurred:" ) # An error occurred: name 'x' is not defined
                 self.wait_time += 10
                 time.sleep(self.wait_time)
         return response

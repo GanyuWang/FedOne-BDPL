@@ -45,6 +45,7 @@ from preprocess_GPT import prepare_and_load_dataset, split_dataset_among_clients
 #from PromptTuningClient_GPT.BBT import ClientBBT
 from PromptTuningClient_GPT.BDPL_GPT import ClientBDPL
 from PromptTuningClient_GPT.GumbelBDPL_GPT import ClientGumbelBDPL
+from PromptTuningClient_GPT.NoPrompt_GPT import ClientNoPrompt
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Finetune a transformers model on a text classification task")
@@ -187,17 +188,21 @@ if __name__ == "__main__":
             client = ClientBDPL(args, accelerator, client_trainset_list[client_idx], ngram_list, complete_GPT)
         elif args.prompt_tuning_method == "GumbelBDPL":
             client = ClientGumbelBDPL(args, accelerator, client_trainset_list[client_idx], ngram_list, complete_GPT)
+        elif args.prompt_tuning_method == "NoPrompt":
+            client = ClientNoPrompt(args, accelerator, client_trainset_list[client_idx], ngram_list, complete_GPT)
         client_list.append(client) 
 
     # 2 写 FL训练的框架。
     if args.prompt_tuning_method == "BDPL":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
     if args.prompt_tuning_method == "GumbelBDPL":
-        #average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
-        average_theta = torch.FloatTensor([[2.0] * args.prompt_search_space] * args.prompt_length)
-        print(average_theta)
+        average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
+        #average_theta = torch.FloatTensor([[2.0] * args.prompt_search_space] * args.prompt_length)
+        #print(average_theta)
     elif args.prompt_tuning_method == "BBT":
         average_theta = torch.zeros(client_list[0].d)
+    elif args.prompt_tuning_method == "NoPrompt":
+        average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length) #Just for place holder. 
     best_theta = average_theta.clone().detach()
 
     # Start the training process. 
@@ -292,6 +297,8 @@ if __name__ == "__main__":
             test_result = client_list[0].testBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=label_to_id, test_batches_mm=test_batches_mm)
         elif args.prompt_tuning_method == "GumbelBDPL":
             test_result = client_list[0].testGumbelBDPL(args, test_batches, metric, accelerator, epoch, test_results, prompts_probs=best_prompt_prob, prompt_length=prompt_length, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=label_to_id, test_batches_mm=test_batches_mm)   # prompts_alpha
+        elif args.prompt_tuning_method == "NoPrompt":
+            test_result = client_list[0].testNoPrompt(args, test_batches, metric, accelerator, epoch, test_results, tokenizer=tokenizer, linear_layer=None, prompts=None, label_to_id=label_to_id, test_batches_mm=test_batches_mm)
         else:
             raise Exception("Prompt-tuning method incoorect.")
         

@@ -194,8 +194,8 @@ if __name__ == "__main__":
     if args.prompt_tuning_method == "BDPL":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
     if args.prompt_tuning_method == "GumbelBDPL":
-        average_theta = torch.FloatTensor([[6.0] * args.prompt_search_space] * args.prompt_length)
-        #average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
+        # average_theta = torch.FloatTensor([[6.0] * args.prompt_search_space] * args.prompt_length)
+        average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
     elif args.prompt_tuning_method == "BBT":
         average_theta = torch.zeros(client_list[0].d)
     elif args.prompt_tuning_method == "prompt-tuning":

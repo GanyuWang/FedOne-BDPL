@@ -323,7 +323,7 @@ class ClientGumbelBDPL:
 
             if args.task_name == 'mnli':
                 for step in range(len(test_batches_mm['sentence'])):
-                    if args.trial and step >= args.trial_step:
+                    if args.trial and step >= args.test_trial_step:
                         break
                     print(f"step is {step}")
 
