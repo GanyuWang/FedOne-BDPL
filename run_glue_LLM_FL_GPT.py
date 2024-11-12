@@ -53,7 +53,7 @@ def parse_args():
     parser.add_argument("--file_name", type=str, default=None, help="The name of the domain-specific task.")
     parser.add_argument("--low_resource", action="store_true")
     parser.add_argument("--ce_loss", type=bool, default=True)
-    parser.add_argument("--sample_size", type=int, default=20, help="IMPORTANT, sample size per batch") # 
+    parser.add_argument("--sample_size", type=int, default=20, help="IMPORTANT, sample size per batch") 
     parser.add_argument("--prompt_length", type=int, default=6)
     parser.add_argument("--prompt_learning_rate", type=float, default=5e-5)
     parser.add_argument("--prompt_search_space", type=int, default=20)
@@ -94,7 +94,7 @@ def parse_args():
     # BBT parameter
     parser.add_argument("--bbt_d", type=int, default=500, help="the d for BBT.")
     parser.add_argument("--bbt_sigma", type=float, default=1.0, help="the sigma for CMAES in BBT.")
-    parser.add_argument("--bbt_population_size", type=int, default=20, help="the population size for CMAES in BBT.") #多次采样次数
+    parser.add_argument("--bbt_population_size", type=int, default=20, help="the population size for CMAES in BBT.")
     # BDPL Gumbel Softmax 
     parser.add_argument("--tau", type=float, default=0.1, help="The temperature of gumbel_softmax")
     # GPT
@@ -153,7 +153,7 @@ if __name__ == "__main__":
     csv_log = CSV_log(args.log_file_name)
     tracker = Tracker()
 
-    # 0 准备dataset。 
+    # 0 Prepared the dataset. 
     info1, info2, info3, info4= prepare_and_load_dataset(args)
     accelerator, label_to_id, tokenizer, prompt_length, metric, ngram_list = info1
     hingeloss, ce_loss = info2
@@ -175,7 +175,7 @@ if __name__ == "__main__":
     print(args.test_trial_step)
     #raise Exception()
 
-    # 1 分割 dataset. 按照样本id 平均分配。
+    # 1 Split the dataset. Distribute evenly based on sample ID.
     client_trainset_list = split_dataset_among_clients(train_dataset, args.num_clients, mode="random")
 
     # Ininialize clients
@@ -192,7 +192,7 @@ if __name__ == "__main__":
             client = ClientNoPrompt(args, accelerator, client_trainset_list[client_idx], ngram_list, complete_GPT)
         client_list.append(client) 
 
-    # 2 写 FL训练的框架。
+    # 2 The training framework of FL.
     if args.prompt_tuning_method == "BDPL":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
     if args.prompt_tuning_method == "GumbelBDPL":
