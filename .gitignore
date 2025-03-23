@@ -3,6 +3,7 @@ assets/
 __pycache__/
 Experiment*/
 PreliminaryResult/
+ArchiveRun/
 install.sh
 run.sh
 run_backup.sh

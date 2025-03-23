@@ -292,7 +292,7 @@ class ClientBDPL:
                     response = self.complete_GPT.train_api_request(chat_obj, max_tokens=args.max_tokens, model_name=args.model_name_or_path, n=1, top_logprob=args.top_logprob)
                     labels_prob = self.complete_GPT.get_label_prob(response, chat_obj, label_keys, args)
                     batch.append(chat_obj)
-                    print(labels_prob)   
+                    print(labels_prob)
                     label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
                 
                 #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)

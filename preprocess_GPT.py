@@ -19,6 +19,7 @@ from transformers import (
     get_scheduler,
     set_seed,
 )
+
 from transformers.utils.versions import require_version
 #from transformers.models.roberta.configuration_roberta import RobertaConfig
 #from transformers.models.roberta.modeling_roberta import RobertaClassificationHead, RobertaForMaskedLM
@@ -95,14 +96,14 @@ LABEL_CONVERT = {
 }
 
 TEMPLATE_CONFIG = {
-    "mnli": " entailment? yes, maybe, or no?",
-    "qqp": " equivalent? yes or no?",
-    "sst2": ' What is the sentiment? great or terrible?',
-    "mrpc": " equivalent? yes or no?",
-    "cola": " correct? yes or no?",
-    "wnli": " What is the relation?",  # No dataset. 
-    'qnli': " entailment? yes or no?", 
-    "rte": " entailment? yes or no?",
+    "mnli": "Reply me with one word: 'yes', 'maybe', or 'no':\n",
+    "qqp":  "Reply me with one word: 'yes' or 'no':\n",
+    "sst2": "Reply me with one word: 'great' or 'terrible':\n",
+    "mrpc": "Reply me with one word: 'yes' or 'no':\n",
+    "cola": "Reply me with one word: 'yes' or 'no':\n",
+    "wnli": "Reply me with one word: 'yes' or 'no':\n",
+    "qnli": "Reply me with one word: 'yes' or 'no':\n",
+    "rte":  "Reply me with one word: 'yes' or 'no':\n",
     "CI": " What is the intent?",
     "SE": " What is the relation?",
     "RCT": " What is the role?",
@@ -110,6 +111,27 @@ TEMPLATE_CONFIG = {
     "imdb": " It was .",
     "cr": " It was ",
 }
+
+# With correct prompt. 
+# TEMPLATE_CONFIG = {
+#     "mnli": "Entailment? Reply me with one word: 'yes', 'maybe', or 'no':\n",
+#     "qqp": "Equivalent? Reply me with one word: 'yes' or 'no':\n",
+#     "sst2": "What is the sentiment? Reply me with one word: 'great' or 'terrible':\n",
+#     "mrpc": "Equivalent? Reply me with one word: 'yes' or 'no':\n",
+#     "cola": "Correct? Reply me with one word: 'yes' or 'no':\n",
+#     "wnli": "What is the relation? Reply me with one word: 'yes' or 'no':\n",
+#     "qnli": "Entailment? Reply me with one word: 'yes' or 'no':\n",
+#     "rte": "Entailment? Reply me with one word: 'yes' or 'no':\n",
+#     "CI": " What is the intent?",
+#     "SE": " What is the relation?",
+#     "RCT": " What is the role?",
+#     "HP": " Helpful?",
+#     "imdb": " It was .",
+#     "cr": " It was ",
+# }
+
+
+
 
 def solve_v_total_exact(prompt_emb):
     k = 1
@@ -195,7 +217,7 @@ class CompleteGPT():
         )
         self.wait_time = 1
 
-    def complete_gpt3(self, prompt, max_tokens, model_name, n=1, top_logprob=1):
+    def complete_gpt3(self, prompt, max_tokens, model_name, n=1, top_logprob=5):
         response = None
         received = False
         
@@ -207,7 +229,8 @@ class CompleteGPT():
                             logprobs=True,
                             max_tokens=max_tokens,
                             n=n,
-                            top_logprobs=top_logprob)
+                            top_logprobs=top_logprob,
+                            temperature=0.)
                 received = True
                 self.wait_time = self.wait_time-1
                 if self.wait_time <= 0: self.wait_time = 0.6
@@ -448,9 +471,9 @@ def prepare_and_load_dataset(args):
             if sentence2_key is None:
                 ori_sent_id = tokenizer.tokenize(examples[sentence1_key][i])[:400]
                 new_sent = tokenizer.convert_tokens_to_string(ori_sent_id)
-                result["input"].append(' input: '+ new_sent + template_cfg + "\n")   # Specific for GPT 3.5.  Delete output. 
+                result["input"].append( template_cfg + new_sent + "\n")   # Specific for GPT 3.5.  Delete output. 
             else:
-                result["input"].append(' input: sentence one: '+ examples[sentence1_key][i] + ' sentence two: ' + examples[sentence2_key][i] + template_cfg + "\n")
+                result["input"].append( template_cfg + f' input sentence one: \"{examples[sentence1_key][i]}\" ' + f' sentence two: \"{examples[sentence2_key][i]}\" \n')
 
         if args.task_name or args.file_name in DOMAIN_DATASET:
             result['labels'] = [id_to_label[x] for x in examples["label"]]
