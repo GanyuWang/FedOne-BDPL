@@ -1,7 +1,7 @@
-ac=1
+ac=10
 task_name=qqp
 prompt_tuning_method=BDPL
-prompt_learning_rate=1e-3
+prompt_learning_rate=5e-3
 prompt_length=20
 bbt_population_size=200
 early_stop=90e-2
@@ -12,7 +12,7 @@ echo ${log_file_path}
 CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL_GPT.py \
     --task_name=${task_name} \
     --prompt_tuning_method ${prompt_tuning_method} \
-    --bdpl_gradient_method negative \
+    --bdpl_gradient_method zero \
     --model_name_or_path gpt-3.5-turbo-0125 \
     --per_device_train_batch_size 16 \
     --per_device_eval_batch_size 10 \
@@ -33,8 +33,3 @@ echo ${log_file_path}
 
 
 
-# --skip_training\
-# numbe of train epoch 5. 
-# 2, 7, 15
-# 0125
-# 1106
