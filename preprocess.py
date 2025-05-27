@@ -487,44 +487,92 @@ def train_api_request(model, input_ids=None, attention_mask=None):
     return sequence_output
 
 
+from collections import defaultdict
+# --- Dirichlet partitioning ---
+def dirichlet_partition(dataset, num_clients, alpha, label_column="labels", min_samples_per_client=1):
+    labels = np.array(dataset[label_column])
+    num_classes = len(np.unique(labels))
+    idx_by_class = [np.where(labels == i)[0] for i in range(num_classes)]
+
+    client_indices = defaultdict(list)
+
+    for c in range(num_classes):
+        np.random.shuffle(idx_by_class[c])
+        proportions = np.random.dirichlet(np.repeat(alpha, num_clients))
+
+        # Scale proportions to actual sample counts
+        counts = (proportions * len(idx_by_class[c])).astype(int)
+
+        # Fix rounding errors to make sure total matches
+        while counts.sum() < len(idx_by_class[c]):
+            counts[np.argmax(proportions)] += 1
+        while counts.sum() > len(idx_by_class[c]):
+            counts[np.argmax(counts)] -= 1
+
+        # Ensure each client gets at least one sample from some class
+        for i in range(num_clients):
+            if counts[i] == 0 and len(idx_by_class[c]) >= num_clients:
+                counts[i] = 1
+                counts[np.argmax(counts)] -= 1
+
+        splits = np.split(idx_by_class[c], np.cumsum(counts)[:-1])
+        for client_id, split in enumerate(splits):
+            client_indices[client_id].extend(split.tolist())
+
+    # Final pass: Ensure no client is empty overall
+    empty_clients = [cid for cid, idxs in client_indices.items() if len(idxs) == 0]
+    for cid in empty_clients:
+        # Steal 1 sample from the largest client
+        donor = max(client_indices, key=lambda k: len(client_indices[k]))
+        client_indices[cid].append(client_indices[donor].pop())
+
+    return client_indices
+
 # Split the dataset. 
-def split_dataset_among_clients(dataset, num_clients, mode="seq"):
+def split_dataset_among_clients(dataset, num_clients, mode="seq", alpha=-1):
 
     assert len(dataset) > num_clients
 
-    # Determine the indices for splitting
-    indices = list(range(len(dataset)))
-    if mode == "random":
-        random.shuffle(indices)  # Shuffle only in random mode
+    if alpha == -1:
+        # IID mode
+        # Determine the indices for splitting
+        indices = list(range(len(dataset)))
+        if mode == "random":
+            random.shuffle(indices)  # Shuffle only in random mode
 
-    # Calculate the size of each subset
-    subset_size = len(dataset) // num_clients
-    extra_samples = len(dataset) % num_clients
+        # Calculate the size of each subset
+        subset_size = len(dataset) // num_clients
+        extra_samples = len(dataset) % num_clients
 
-    # Split the dataset into subsets
-    subsets = []
-    start_idx = 0
-    for i in range(num_clients):
-        if i < extra_samples:
-            end_idx = start_idx + subset_size + 1
-        else:
-            end_idx = start_idx + subset_size
+        # Split the dataset into subsets
+        subsets = []
+        start_idx = 0
+        for i in range(num_clients):
+            if i < extra_samples:
+                end_idx = start_idx + subset_size + 1
+            else:
+                end_idx = start_idx + subset_size
 
-        # Select a range of indices from the dataset to create subsets
-        subset_indices = indices[start_idx:end_idx]
-        subset = dataset.select(subset_indices)
-        subsets.append(subset)
-        start_idx = end_idx
+            # Select a range of indices from the dataset to create subsets
+            subset_indices = indices[start_idx:end_idx]
+            subset = dataset.select(subset_indices)
+            subsets.append(subset)
+            start_idx = end_idx
 
-    return subsets
+        return subsets
+    else:
+        # Non-IID using Dirichlet
+        client_indices = dirichlet_partition(dataset, num_clients, alpha)
+        subsets = [dataset.select(sorted(client_indices[i])) for i in range(num_clients)]
+        return subsets
+
+
 
 def print_trainable_parameters(model):
     print("Trainable parameters:")
     for name, param in model.named_parameters():
         if param.requires_grad:
             print(f"{name}: {param.numel()}")
-
-
 
 
 class CSV_log: 

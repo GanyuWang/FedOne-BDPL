@@ -1,5 +1,5 @@
 ac=1
-prompt_tuning_method=GumbelBDPL
+prompt_tuning_method=prompt-tuning  # Options: prompt-tuning, prefix-tuning, BBT, BDPL, GumbelBDPL, 
 prompt_learning_rate=3e-5
 prompt_length=20
 bbt_population_size=200

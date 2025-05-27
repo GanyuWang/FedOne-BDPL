@@ -117,7 +117,7 @@ class ClientBBT:
                     batch_size = input_ids.size(0)
                     prefix_embedding = torch.matmul(ClientBBT._A, z)# p_0 is none
                     prefix_embedding = prefix_embedding.reshape(args.prompt_length, -1)
-                    prefix = prefix_embedding.reshape((args.prompt_length, -1)).repeat(batch_size, 1, 1).to(args.device) # 这里有问题。需要的是
+                    prefix = prefix_embedding.reshape((args.prompt_length, -1)).repeat(batch_size, 1, 1).to(args.device) 
                     inputs_embeds = model.roberta.embeddings(input_ids)  # Assuming input_ids is not None
                     inputs_embeds = torch.cat((prefix, inputs_embeds), dim=1)    
                     prefix_attention_mask = torch.ones((batch_size, args.prompt_length), dtype=torch.long, device=input_ids.device)

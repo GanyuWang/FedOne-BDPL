@@ -38,7 +38,7 @@ import time
 logger = logging.getLogger(__name__)
 
 """
-格式：
+# format: 
 updated_params = {
     'prefix_embeddings': <tensor>,
     'attention_params': [
@@ -92,7 +92,7 @@ class ModelParams:
         return ModelParams(new_prefix_embeddings, new_attention_params)
     
     def __radd__(self, other):
-        # 允许 0 与 ModelParams 相加
+        # 
         if other == 0:
             return self
         else:

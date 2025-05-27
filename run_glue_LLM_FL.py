@@ -84,11 +84,13 @@ def parse_args():
     parser.add_argument("--use_ngram", default=True, type=bool, help="If True, will extract ngrams and use them.")
     parser.add_argument("--api_limit", type=int, default=8000 , help="The limit of the API request")
     # Federated learning
-    parser.add_argument("--FL_framework", type=str, default="FedAvg", help="Which Federated Learning Framework: FedAvg, FedSeq")
+    parser.add_argument("--FL_framework", type=str, default="FedAvg", help="Which Federated Learning Framework: FedAvg") # Only option. 
     parser.add_argument("--num_clients", type=int, default=10 , help="The number of clients in FL.")
     parser.add_argument("--num_activated_clients", type=int, default=10 , help="The number of activated clients in each epoch of FL.")
     parser.add_argument("--num_client_local_step", type=int, default=1000 , help="The number of clients' local update epoch in FL.")
     parser.add_argument("--max_client_train_steps", type=int, default=8000, help="The limit of client's local iteration, per activation")
+    # FL heterogeneous.
+    parser.add_argument("--dirichlet_alpha", type=float, default=-1, help="Dirichlet distribution parameter for non-IID partitioning. Use -1 for IID partitioning.")
     # prompt tuning method. 
     parser.add_argument("--prompt_tuning_method", type=str, default="BDPL", help="Which white-box tuning method:BBT, BDPL, prefix-tuning, prompt-tuning, " )
     # BDPL
@@ -173,7 +175,7 @@ if __name__ == "__main__":
     print(f"The prompt tuning method is: {args.prompt_tuning_method}")
 
     # 1 Split the dataset. Distribute evenly based on sample ID.
-    client_trainset_list = split_dataset_among_clients(train_dataset, args.num_clients, mode="random")
+    client_trainset_list = split_dataset_among_clients(train_dataset, args.num_clients, mode="random", alpha=args.dirichlet_alpha)
 
     # Ininialize clients
     client_list = []
@@ -207,43 +209,30 @@ if __name__ == "__main__":
     # Start the training process. 
     for epoch in range(args.num_train_epochs):
         tracker.start_comp_time_tracker()
-        if args.FL_framework == "FedAvg":
-            # training. 
-            client_prompts_probs_list = []
-            client_dataset_len_list = []
-            for client_idx in random.sample(range(args.num_clients), args.num_activated_clients):
-                # Each client train and update.  
-                client_prompts_probs = client_list[client_idx].local_training(args, model, tokenizer, average_theta, tracker)
-                client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
-                # get the weight for averaging. 
-                client_dataset_len_nk = client_list[client_idx].get_len_dataset()
-                client_dataset_len_list.append(client_dataset_len_nk) #print("weight: \n", weight)
 
-                # calculate the FL communication 
-                tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
-                tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
-                tracker.FL_query_times += 1
+        # training. 
+        client_prompts_probs_list = []
+        client_dataset_len_list = []
+        for client_idx in random.sample(range(args.num_clients), args.num_activated_clients):
+            # Each client train and update.  
+            client_prompts_probs = client_list[client_idx].local_training(args, model, tokenizer, average_theta, tracker)
+            client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
+            # get the weight for averaging. 
+            client_dataset_len_nk = client_list[client_idx].get_len_dataset()
+            client_dataset_len_list.append(client_dataset_len_nk) #print("weight: \n", weight)
 
-            # Fed Average.
-            sampled_client_dataset_len_sum_mt = sum(client_dataset_len_list) 
-            average_theta = sum(nk/sampled_client_dataset_len_sum_mt * tensor for nk, tensor in zip(client_dataset_len_list, client_prompts_probs_list)) 
-            if args.prompt_tuning_method == "prompt-tuning":
-                model.prompt_encoder.default.embedding.weight.data = average_theta
-            elif args.prompt_tuning_method == "prefix-tuning":
-                model.trainable_params.data = average_theta 
+            # calculate the FL communication 
+            tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
+            tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
+            tracker.FL_query_times += 1
 
-        elif args.FL_framework == "FedSeq":
-            for client_idx in range(args.num_clients):
-                average_theta = client_list[client_idx].local_training(args, model, tokenizer, average_theta, tracker) #avg
-                if args.prompt_tuning_method == "prompt-tuning":
-                    model.prompt_encoder.default.embedding.weight.data = average_theta
-                elif args.prompt_tuning_method == "prefix-tuning":
-                    model.trainable_params.data = average_theta
-
-                # calculate the FL communication 
-                tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
-                tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
-                tracker.FL_query_times += 1
+        # Fed Average.
+        sampled_client_dataset_len_sum_mt = sum(client_dataset_len_list) 
+        average_theta = sum(nk/sampled_client_dataset_len_sum_mt * tensor for nk, tensor in zip(client_dataset_len_list, client_prompts_probs_list)) 
+        if args.prompt_tuning_method == "prompt-tuning":
+            model.prompt_encoder.default.embedding.weight.data = average_theta
+        elif args.prompt_tuning_method == "prefix-tuning":
+            model.trainable_params.data = average_theta 
 
         tracker.stop_comp_time_tracker()
 
@@ -262,11 +251,6 @@ if __name__ == "__main__":
         else:
             raise Exception("Prompt-tuning method incoorect.")
         
-
-        a = torch.clamp(average_theta.data, min=1e-15)
-        prb = F.gumbel_softmax(torch.log(a.data), tau=args.tau)
-        print(prb)
-        #raise Exception(prb)
 
         row =  [epoch, tracker.comp_time,
                 eval_result, 'val_metric_2',
