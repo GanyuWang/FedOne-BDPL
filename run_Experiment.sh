@@ -1,11 +1,12 @@
+# Tuning command. 
 ac=1
-prompt_tuning_method=prompt-tuning  # Options: prompt-tuning, prefix-tuning, BBT, BDPL, GumbelBDPL, 
+prompt_tuning_method=prompt-tuning  
 prompt_learning_rate=3e-5
 prompt_length=20
 bbt_population_size=200
 early_stop=77e-2
 
-
+# Repeat experiment
 for seed in {101..103}
     do
     echo activated_client_${ac}_seed_${seed}
@@ -25,5 +26,5 @@ for seed in {101..103}
         --num_train_epochs 100 \
         --FL_framework FedAvg --num_clients 100 --num_activated_clients ${ac} --num_client_local_step 1 --max_client_train_steps 8000 \
         --early_stop ${early_stop} \
-        --log_file_name ExperimentResult2/sst2_${prompt_tuning_method}_ps${bbt_population_size}_lr${prompt_learning_rate}_pl${prompt_length}_ac${ac}_es${early_stop}_seed${seed}
+        --log_file_name sst2_${prompt_tuning_method}_ps${bbt_population_size}_lr${prompt_learning_rate}_pl${prompt_length}_ac${ac}_es${early_stop}_seed${seed}
 done

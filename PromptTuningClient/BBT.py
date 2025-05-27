@@ -96,7 +96,7 @@ class ClientBBT:
                     attention_mask = batch["attention_mask"]
                     # Find the maks position. 
                     # bsz = len(batch['input_ids'])
-                    mask_pos = np.where(np.array(input_ids.cpu()) == tokenizer.mask_token_id)     # 找到 mask position. 
+                    mask_pos = np.where(np.array(input_ids.cpu()) == tokenizer.mask_token_id)     # find mask position. 
                     mask_pos = torch.tensor(mask_pos[-1]) + args.prompt_length
                     
                     # label and convert to target. 
@@ -255,7 +255,7 @@ class ClientBBT:
                 batch_size = bsz
                 prefix_embedding = torch.matmul(ClientBBT._A, z)# p_0 is none
                 prefix_embedding = prefix_embedding.reshape(args.prompt_length, -1)
-                prefix = prefix_embedding.reshape((args.prompt_length, -1)).repeat(batch_size, 1, 1).to(args.device) # 这里有问题。需要的是
+                prefix = prefix_embedding.reshape((args.prompt_length, -1)).repeat(batch_size, 1, 1).to(args.device) # 
                 inputs_embeds = model.roberta.embeddings(input_ids)  # Assuming input_ids is not None
                 inputs_embeds = torch.cat((prefix, inputs_embeds), dim=1)    
                 prefix_attention_mask = torch.ones((batch_size, args.prompt_length), dtype=torch.long, device=input_ids.device)
@@ -303,7 +303,7 @@ class ClientBBT:
                     batch_size = bsz
                     prefix_embedding = torch.matmul(ClientBBT._A, z)# p_0 is none
                     prefix_embedding = prefix_embedding.reshape(args.prompt_length, -1)
-                    prefix = prefix_embedding.reshape((args.prompt_length, -1)).repeat(batch_size, 1, 1).to(args.device) # 这里有问题。需要的是
+                    prefix = prefix_embedding.reshape((args.prompt_length, -1)).repeat(batch_size, 1, 1).to(args.device) #
                     inputs_embeds = model.roberta.embeddings(input_ids)  # Assuming input_ids is not None
                     inputs_embeds = torch.cat((prefix, inputs_embeds), dim=1)    
                     prefix_attention_mask = torch.ones((batch_size, args.prompt_length), dtype=torch.long, device=input_ids.device)

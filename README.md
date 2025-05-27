@@ -1,5 +1,8 @@
 # FedOne: Query-Efficient Federated Learning for Black-box Discrete Prompt Learning
 
+The code for our publication in ICML-2025, FedOne: Query-Efficient Federated Learning for Black-box Discrete Prompt Learning. 
+
+This code is adapted from https://github.com/shizhediao/Black-Box-Prompt-Learning
 
 
 ## Requirements
@@ -12,6 +15,7 @@ To set up the environment, follow these steps:
    conda create -n bdpl python=3.9.19 -y
    conda activate bdpl
    ```
+   We used python version (3.9.19). 
 
 2. **Install required packages:**
 
@@ -36,7 +40,7 @@ To set up the environment, follow these steps:
    bash run_GPT.sh
    ```
 
-   Make sure to obtain your [OpenAI API Key](https://openai.com/api/) and add it to a `.env` file in your project directory. The content of `.env` file should look like this:
+   Make sure to obtain your [OpenAI API Project Key](https://openai.com/api/) and add it to a `.env` file in your project directory. The content of `.env` file should look like this:
 
    ```plaintext
    OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -50,7 +54,7 @@ To set up the environment, follow these steps:
 
 ### General Training Arguments
 
-* `--task_name`: Specifies the name of the GLUE task. Options include: `[mrpc, qnli, cola, rte]`.
+* `--task_name`: Specifies the name of the GLUE task. Options include: `[mnli, qqp, sst2, mrpc, cola, qnli, rte]`.
 * `--file_name`: Indicates the name of the domain-specific dataset. Options include: `[CI, SE, RCT, HP]`.
 * `--low_resource`: Enables low-resource training mode.
 * `--ce_loss`: Specifies whether to use cross-entropy loss. If set to `False`, hinge loss will be used. Default is `True`.
@@ -83,26 +87,22 @@ To set up the environment, follow these steps:
 
 ### Federated Learning Arguments
 
-* `--FL_framework`: Specifies the Federated Learning framework. Currently supported: `FedAvg`. Default is `FedAvg`.
+* `--FL_framework`: Specifies the Federated Learning framework. Currently supported: `FedAvg`.
 * `--num_clients`: Total number of clients in the Federated Learning setup. Default is `10`.
 * `--num_activated_clients`: Number of clients activated in each training round. Default is `10`.
 * `--num_client_local_step`: Number of local update steps performed by each client. Default is `1000`.
 * `--max_client_train_steps`: Maximum number of training steps a client can perform during one activation. Default is `8000`.
-* `--dirichlet_alpha`: Dirichlet concentration parameter for non-IID data partitioning. A value of `-1` indicates IID partitioning. Default is `-1.0`.
+* `--dirichlet_alpha`: Dirichlet concentration parameter for non-IID data partitioning. A value of `-1` indicates IID partitioning, other value all using Dirichlet partition. Default is `-1.0`.
 
 ### Prompt Tuning Method Arguments
 
 * `--prompt_tuning_method`: Specifies the prompt tuning strategy. Supported options include: `BBT`, `BDPL`, `GumbelBDPL`, `prefix-tuning`, and `prompt-tuning`. Default is `BDPL`.
 
-#### BDPL-Specific Arguments
-
-* `--bdpl_gradient_method`: Specifies the method used to estimate gradients in BDPL. Options: `negative`, `zero`, `normalize`. Default is `negative`.
-
 #### BBT-Specific Arguments
 
 * `--bbt_d`: Dimensionality parameter for BBT. Default is `500`.
 * `--bbt_sigma`: Standard deviation parameter for the CMA-ES optimizer in BBT. Default is `1.0`.
-* `--bbt_population_size`: Population size used by the CMA-ES optimizer. Default is `20`.
+* `--bbt_population_size`: Population size used by the CMA-ES optimizer. Default is `200`.
 
 #### Gumbel-Softmax Arguments (BDPL)
 
@@ -114,8 +114,14 @@ To set up the environment, follow these steps:
 
 ### Logging
 
-* `--log_file_name`: File name or path for saving training logs. Default is `TempResult`.
+* `--log_file_name`: Specifies the **file path** for saving training logs. The default value is `TempResult`. When set to `TempResult`, the log file can be overwritten in subsequent runs. For all other values, the system will prevent overwriting an existing log file to avoid accidental loss of results. Upon completion of training, the final row of the log file records the test result. 
+
 
 
 ## Datasts
    [GLUE benchmark](https://gluebenchmark.com/): MNLI, QQP, SST-2, MRPC, CoLA, QNLI, RTE
+
+
+
+# citation
+

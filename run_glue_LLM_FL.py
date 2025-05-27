@@ -98,7 +98,7 @@ def parse_args():
     # BBT parameter
     parser.add_argument("--bbt_d", type=int, default=500, help="the d for BBT.")
     parser.add_argument("--bbt_sigma", type=float, default=1.0, help="the sigma for CMAES in BBT.")
-    parser.add_argument("--bbt_population_size", type=int, default=20, help="the population size for CMAES in BBT.") 
+    parser.add_argument("--bbt_population_size", type=int, default=200, help="the population size for CMAES in BBT.") 
     # BDPL Gumbel Softmax 
     parser.add_argument("--tau", type=float, default=0.1, help="The temperature of gumbel_softmax")
     # Early Stop
@@ -190,12 +190,14 @@ if __name__ == "__main__":
             client = ClientPrefixTuning(args, accelerator, model, client_trainset_list[client_idx], data_collator, config)
         elif args.prompt_tuning_method == "prompt-tuning":
             client = ClientPromptTuning(args, accelerator, model, client_trainset_list[client_idx], data_collator, config)
+        else:
+            raise Exception("Prompt-tuning method not selected.")
         client_list.append(client) 
 
     # 2 Training framework of FL. 
     if args.prompt_tuning_method == "BDPL":
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
-    if args.prompt_tuning_method == "GumbelBDPL":
+    elif args.prompt_tuning_method == "GumbelBDPL":
         # average_theta = torch.FloatTensor([[6.0] * args.prompt_search_space] * args.prompt_length)
         average_theta = torch.FloatTensor([[1 / args.prompt_search_space] * args.prompt_search_space] * args.prompt_length)
     elif args.prompt_tuning_method == "BBT":
@@ -204,6 +206,8 @@ if __name__ == "__main__":
         average_theta = model.prompt_encoder.default.embedding.weight.clone().detach()
     elif args.prompt_tuning_method == "prefix-tuning":
         average_theta = model.trainable_params.clone().detach()
+    
+
     best_theta = average_theta.clone().detach() # initilize the best_theta. 
     
     # Start the training process. 
@@ -249,7 +253,7 @@ if __name__ == "__main__":
         elif args.prompt_tuning_method == "prompt-tuning":
             eval_result = evaluatePromptTuning(args, model, eval_dataloader, metric, ce_loss, config, accelerator, epoch, eval_results, prompts_probs=average_theta, prompt_length=prompt_length, tokenizer=tokenizer)
         else:
-            raise Exception("Prompt-tuning method incoorect.")
+            raise Exception("Prompt-tuning method not selected.")
         
 
         row =  [epoch, tracker.comp_time,
@@ -295,7 +299,7 @@ if __name__ == "__main__":
     elif args.prompt_tuning_method == "prompt-tuning":
         test_result = testPromptTuning(args, model, test_dataloader, metric, accelerator, epoch, test_results, prompts_probs=best_theta, prompt_length=prompt_length, tokenizer=tokenizer, test_dataloader_mm=test_dataloader_mm)
     else:
-        raise Exception("Prompt-tuning method incoorect.")
+        raise Exception("Prompt-tuning method not selected.")
     
     # add the log for the final. 
     row =  [-100, tracker.comp_time,

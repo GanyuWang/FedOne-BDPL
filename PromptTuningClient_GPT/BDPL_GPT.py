@@ -145,22 +145,22 @@ class ClientBDPL:
                         
                         self.prompt_optimizer.zero_grad()
 
-                        if args.bdpl_gradient_method == "negative": #一个正其他负。
+                        if args.bdpl_gradient_method == "negative": 
                             derivative = (-1 / self.prompts_probs).repeat(args.sample_size, 1, 1)
                             for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
                                 for i in range(args.prompt_length):
-                                        derivative[k][i][prompts_discrete_indices[i]] *= -1  # 只有一个正。其他负。
-                        elif args.bdpl_gradient_method == "zero": # 一个正其他0.
+                                        derivative[k][i][prompts_discrete_indices[i]] *= -1  
+                        elif args.bdpl_gradient_method == "zero": # 
                             derivative_1devided_by_p = (1 / self.prompts_probs).repeat(args.sample_size, 1, 1)
                             derivative = (torch.zeros_like(self.prompts_probs)).repeat(args.sample_size, 1, 1)
                             for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
                                 for i in range(args.prompt_length):
-                                        derivative[k][i][prompts_discrete_indices[i]] = derivative_1devided_by_p[k][i][prompts_discrete_indices[i]]  # 只有一个正。其他0。
-                        elif args.bdpl_gradient_method == "normalize": # 一个正 其他 - 1/prompt_searching_space * p. 
+                                        derivative[k][i][prompts_discrete_indices[i]] = derivative_1devided_by_p[k][i][prompts_discrete_indices[i]]  # 
+                        elif args.bdpl_gradient_method == "normalize": # 
                             derivative = (-1 / self.prompts_probs /args.prompt_search_space).repeat(args.sample_size, 1, 1)
                             for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
                                 for i in range(args.prompt_length):
-                                        derivative[k][i][prompts_discrete_indices[i]] *= -1 * args.prompt_search_space  # 只有一个正 1/p。其他 - 1/p /searching space.
+                                        derivative[k][i][prompts_discrete_indices[i]] *= -1 * args.prompt_search_space  # 
                         else:
                             raise Exception("No bdpl_gradient calcualtion selected. ")
 
@@ -211,7 +211,7 @@ class ClientBDPL:
             label_keys = list(self.label_to_id.keys())
             converted_target = torch.tensor([self.label_to_id[label] for label in labels])
             
-            batch = []                                                                                 # 5 batch 的包装方式要重做。
+            batch = []                                                                            
             label_probs = []
             for i in range(len(eval_batches['sentence'][step])): #  change to single one each. 
                 chat_obj = [{ "role":'user', "content" : prompts_discrete + '\t' + eval_batches['sentence'][step][i] }]
@@ -224,7 +224,7 @@ class ClientBDPL:
                 label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
             
             #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
-            logits = torch.stack(label_probs)   # logit 的结合方式要改。
+            logits = torch.stack(label_probs)   
             pred = logits.argmax(dim=-1)
             # end. 
 
@@ -283,7 +283,7 @@ class ClientBDPL:
                 label_keys = list(self.label_to_id.keys())
                 converted_target = torch.tensor([self.label_to_id[label] for label in labels])
                 
-                batch = []                                                                                 # 5 batch 的包装方式要重做。
+                batch = [] 
                 label_probs = []
                 for i in range(len(test_batches['sentence'][step])): #  change to single one each. 
                     chat_obj = [{ "role":'user', "content" : prompts_discrete + '\t' + test_batches['sentence'][step][i] }]
@@ -296,7 +296,7 @@ class ClientBDPL:
                     label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
                 
                 #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
-                logits = torch.stack(label_probs)   # logit 的结合方式要改。
+                logits = torch.stack(label_probs)  
                 
                 # end. 
                 predictions = logits.argmax(dim=-1)
@@ -324,7 +324,7 @@ class ClientBDPL:
                     label_keys = list(self.label_to_id.keys())
                     converted_target = torch.tensor([self.label_to_id[label] for label in labels])
                     
-                    batch = []                                                                                 # 5 batch 的包装方式要重做。
+                    batch = []                                                                                 # 
                     label_probs = []
                     for i in range(len(test_batches['sentence'][step])): #  change to single one each. 
                         chat_obj = [{ "role":'user', "content" : prompts_discrete + '\t' + test_batches['sentence'][step][i] }]
@@ -336,7 +336,7 @@ class ClientBDPL:
                         label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
                     
                     #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
-                    logits = torch.stack(label_probs)   # logit 的结合方式要改。
+                    logits = torch.stack(label_probs)   # 
                     predictions = logits.argmax(dim=-1)
                     # end. 
                     if len(predictions.shape) == 0: predictions = predictions.unsqueeze(0)

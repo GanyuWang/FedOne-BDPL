@@ -109,7 +109,7 @@ class ClientGumbelBDPL:
                             prompts_discrete_indices_list.append(prompts_discrete_indices) 
                             if args.use_ngram:
                                 prompts_discrete_indices_ngram_list = []
-                                indices_list = prompts_discrete_indices.int().tolist() # 采样的 index. 
+                                indices_list = prompts_discrete_indices.int().tolist() # sampling index. 
                                 for idx in indices_list:
                                     prompts_discrete_indices_ngram_list.append(self.ngram_list[idx]) 
                                 prompts_discrete_ngram_indices = torch.tensor(prompts_discrete_indices_ngram_list)
@@ -118,7 +118,7 @@ class ClientGumbelBDPL:
                                 cur_input_ids = torch.cat([torch.zeros(bsz, 1, dtype=torch.long).to(args.device), prompts_discrete_indices.unsqueeze(0).repeat(bsz, 1).to(args.device), batch['input_ids'][:, 1:]], dim=1) # CLS + Discrete Prompt + input_ids
 
                             cur_attention_mask = torch.cat([torch.ones(bsz, 1).to(args.device), torch.ones(bsz, args.prompt_length).to(args.device), batch["attention_mask"][:, 1:]],dim=1) # [0, 1(prompt length), original_attention_mask]
-                            mask_pos = np.where(np.array(cur_input_ids.cpu()) == tokenizer.mask_token_id)     # 找到 mask position. 
+                            mask_pos = np.where(np.array(cur_input_ids.cpu()) == tokenizer.mask_token_id)     # find mask position. 
                             mask_pos = torch.tensor(mask_pos[-1]) 
                             sequence_output = train_api_request(model, input_ids=cur_input_ids, attention_mask=cur_attention_mask)
 
@@ -163,7 +163,7 @@ class ClientGumbelBDPL:
                             self.prompts_alpha.grad = self.prompts_alpha.grad + (1 / (args.sample_size - 1)) * (loss_list[k] - loss_avg) * derivative[k]
 
                         #torch.nn.utils.clip_grad_norm_(self.prompts_probs, 3)
-                        #self.prompts_alpha.data = torch.clamp(self.prompts_alpha.data, min=1e-15)   # 增加clip。 
+                        #self.prompts_alpha.data = torch.clamp(self.prompts_alpha.data, min=1e-15)   # add clipping.  
                         self.prompt_optimizer.step()
                         #constrainScoreByWholeExact(self.prompts_probs)
 

@@ -144,14 +144,14 @@ class ClientBDPL:
                             derivative = (-1 / self.prompts_probs).repeat(args.sample_size, 1, 1)
                             for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
                                 for i in range(args.prompt_length):
-                                    derivative[k][i][prompts_discrete_indices[i]] *= -1  # Only one positive 1/p. - 1/p /searching space.
+                                    derivative[k][i][prompts_discrete_indices[i]] *= -1  # BDPL. 
                         elif args.bdpl_gradient_method == "zero": # Positive 
                             derivative_1devided_by_p = (1 / self.prompts_probs).repeat(args.sample_size, 1, 1)
                             derivative = (torch.zeros_like(self.prompts_probs)).repeat(args.sample_size, 1, 1)
                             for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
                                 for i in range(args.prompt_length):
                                     derivative[k][i][prompts_discrete_indices[i]] = derivative_1devided_by_p[k][i][prompts_discrete_indices[i]]  # One item positive, others zero.. 
-                        elif args.bdpl_gradient_method == "normalize": # 
+                        elif args.bdpl_gradient_method == "normalize": # Normalized by the promp learning space. 
                             derivative = (-1 / self.prompts_probs /args.prompt_search_space).repeat(args.sample_size, 1, 1)
                             for k, prompts_discrete_indices in enumerate(prompts_discrete_indices_list):
                                 for i in range(args.prompt_length):
@@ -159,7 +159,7 @@ class ClientBDPL:
                         else:
                             raise Exception("No bdpl_gradient calcualtion selected. ")
                                 
-
+                        # BDPL 
                         self.prompts_probs.grad = torch.zeros_like(self.prompts_probs)
                         for k in range(args.sample_size):
                             self.prompts_probs.grad += 1 / (args.sample_size - 1) * (loss_list[k] - loss_avg) * derivative[k]

@@ -75,7 +75,7 @@ class ClientPromptTuning:
                     attention_mask = batch["attention_mask"]
                     # Find the maks position. 
                     # bsz = len(batch['input_ids'])
-                    mask_pos = np.where(np.array(input_ids.cpu()) == tokenizer.mask_token_id)     # 找到 mask position. 
+                    mask_pos = np.where(np.array(input_ids.cpu()) == tokenizer.mask_token_id)     # find mask position. 
                     mask_pos = torch.tensor(mask_pos[-1]) 
                     
                     # label and convert to target. 

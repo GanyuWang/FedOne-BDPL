@@ -1,13 +1,12 @@
 ac=1
 task_name=qqp
-prompt_tuning_method=NoPrompt
+prompt_tuning_method=BDPL
 prompt_learning_rate=1e-3
 prompt_length=20
 bbt_population_size=200
 early_stop=90e-2
 seed=53
 
-log_file_path=ExperimentResult_GPT_2/PromptNoTrain_${task_name}_${prompt_tuning_method}_seed${seed}
 
 echo ${log_file_path}
 CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL_GPT.py \
@@ -29,7 +28,7 @@ CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL_GPT.py \
     --FL_framework FedAvg --num_clients 100 --num_activated_clients ${ac} --num_client_local_step 1 --max_client_train_steps 8000 \
     --early_stop ${early_stop} \
     --trial --train_trial_step 5 --eval_trial_step 4 --test_trial_step 15\
-    --log_file_name ExperimentResult_GPT_2/PromptNoTrain_${task_name}_${prompt_tuning_method}_seed${seed}
+    --log_file_name PromptNoTrain_${task_name}_${prompt_tuning_method}_seed${seed}
 echo ${log_file_path}
 
 

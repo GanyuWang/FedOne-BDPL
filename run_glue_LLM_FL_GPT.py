@@ -214,35 +214,26 @@ if __name__ == "__main__":
         else:
             print(f"start training epoch {epoch}")
             tracker.start_comp_time_tracker()
-            if args.FL_framework == "FedAvg":
-                # training. 
-                client_prompts_probs_list = []
-                client_dataset_len_list = []
-                for client_idx in random.sample(range(args.num_clients), args.num_activated_clients):
-                    # Each client train and update.  
-                    client_prompts_probs = client_list[client_idx].local_training(args, None, tokenizer, average_theta, tracker)
-                    client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
-                    # get the weight for averaging. 
-                    client_dataset_len_nk = client_list[client_idx].get_len_dataset() 
-                    client_dataset_len_list.append(client_dataset_len_nk) #print("weight: \n", weight)
 
-                    # calculate the FL communication 
-                    tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
-                    tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
-                    tracker.FL_query_times += 1
+            # training. 
+            client_prompts_probs_list = []
+            client_dataset_len_list = []
+            for client_idx in random.sample(range(args.num_clients), args.num_activated_clients):
+                # Each client train and update.  
+                client_prompts_probs = client_list[client_idx].local_training(args, None, tokenizer, average_theta, tracker)
+                client_prompts_probs_list.append(client_prompts_probs) #print("client_prompts_probs: \n", client_prompts_probs)
+                # get the weight for averaging. 
+                client_dataset_len_nk = client_list[client_idx].get_len_dataset() 
+                client_dataset_len_list.append(client_dataset_len_nk) #print("weight: \n", weight)
 
-                # Fed Average. 
-                sampled_client_dataset_len_sum_mt = sum(client_dataset_len_list) 
-                average_theta = sum(nk/sampled_client_dataset_len_sum_mt * tensor for nk, tensor in zip(client_dataset_len_list, client_prompts_probs_list)) 
+                # calculate the FL communication 
+                tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
+                tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
+                tracker.FL_query_times += 1
 
-            elif args.FL_framework == "FedSeq":
-                for client_idx in range(args.num_clients):
-                    average_theta = client_list[client_idx].local_training(args, None, tokenizer, average_theta, tracker) #avg
-
-                    # calculate the FL communication 
-                    tracker.FL_comm_cost_up += tracker.calculate_comm_size(average_theta)
-                    tracker.FL_comm_cost_down += tracker.calculate_comm_size(average_theta)
-                    tracker.FL_query_times += 1
+            # Fed Average. 
+            sampled_client_dataset_len_sum_mt = sum(client_dataset_len_list) 
+            average_theta = sum(nk/sampled_client_dataset_len_sum_mt * tensor for nk, tensor in zip(client_dataset_len_list, client_prompts_probs_list)) 
 
             tracker.stop_comp_time_tracker()
             print(f"End training epoch {epoch}")

@@ -127,7 +127,7 @@ class ClientGumbelBDPL:
                             label_keys = list(self.label_to_id.keys())
                             converted_target = torch.tensor([self.label_to_id[label] for label in labels])
 
-                            batch = []                                                                                 # 5 batch 的包装方式要重做。
+                            batch = [] 
                             label_probs = []
                             for i in range(len(train_batches['sentence'][step])): #  change to single one each. 
                                 chat_obj = [{ "role":'user', "content" : prompts_discrete + '\t' + train_batches['sentence'][step][i] }]
@@ -142,7 +142,7 @@ class ClientGumbelBDPL:
                                 #raise Exception()
                             
                             #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
-                            logits = torch.stack(label_probs)   # logit 的结合方式要改。
+                            logits = torch.stack(label_probs)   # 
                             pred = logits.argmax(dim=-1)
 
                             if args.ce_loss:
@@ -204,7 +204,7 @@ class ClientGumbelBDPL:
                 prompts_discrete = tokenizer.decode(indices_list, clean_up_tokenization_spaces=False)
 
 
-        for step in range(len(eval_batches['sentence'])): # 200 batch , 每个batch 16个。
+        for step in range(len(eval_batches['sentence'])): # 
 
             print(f"evaluate step {step}")
             if args.trial and step >= args.eval_trial_step:
@@ -216,7 +216,7 @@ class ClientGumbelBDPL:
             label_keys = list(self.label_to_id.keys())
             converted_target = torch.tensor([self.label_to_id[label] for label in labels])
             
-            batch = []                                                                                 # 5 batch 的包装方式要重做。
+            batch = []                                                                                 # 
             label_probs = []
             for i in range(len(eval_batches['sentence'][step])): #  change to single one each. 
 
@@ -230,11 +230,11 @@ class ClientGumbelBDPL:
                 
             
             #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
-            logits = torch.stack(label_probs)   # logit 的结合方式要改。
+            logits = torch.stack(label_probs)   # 
             pred = logits.argmax(dim=-1)
             # end. 
 
-            converted_target = converted_target[:len(logits)]  # 增加这个
+            converted_target = converted_target[:len(logits)]  # Added this. 
             eval_loss_c = ce_loss(logits.view(-1, args.num_labels), converted_target)
             predictions = logits.argmax(dim=-1)
 
@@ -291,7 +291,7 @@ class ClientGumbelBDPL:
                 label_keys = list(self.label_to_id.keys())
                 converted_target = torch.tensor([self.label_to_id[label] for label in labels])
                 
-                batch = []                                                                                 # 5 batch 的包装方式要重做。
+                batch = []
                 label_probs = []
                 for i in range(len(test_batches['sentence'][step])): #  change to single one each. 
                     chat_obj = [{ "role":'user', "content" : prompts_discrete + '\t' + test_batches['sentence'][step][i] }]
@@ -304,7 +304,7 @@ class ClientGumbelBDPL:
                     label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
                 
                 #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
-                logits = torch.stack(label_probs)   # logit 的结合方式要改。
+                logits = torch.stack(label_probs)
                 
                 # end. 
                 predictions = logits.argmax(dim=-1)
@@ -333,7 +333,7 @@ class ClientGumbelBDPL:
                     label_keys = list(self.label_to_id.keys())
                     converted_target = torch.tensor([self.label_to_id[label] for label in labels])
                     
-                    batch = []                                                                                 # 5 batch 的包装方式要重做。
+                    batch = []
                     label_probs = []
                     for i in range(len(test_batches['sentence'][step])): #  change to single one each. 
                         chat_obj = [{ "role":'user', "content" : prompts_discrete + '\t' + test_batches['sentence'][step][i] }]
@@ -345,7 +345,7 @@ class ClientGumbelBDPL:
                         label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
 
                     #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
-                    logits = torch.stack(label_probs)   # logit 的结合方式要改。
+                    logits = torch.stack(label_probs)
                     predictions = logits.argmax(dim=-1)
                     # end. 
                     if len(predictions.shape) == 0: predictions = predictions.unsqueeze(0)

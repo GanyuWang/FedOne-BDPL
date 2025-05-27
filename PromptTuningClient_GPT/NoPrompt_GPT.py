@@ -75,7 +75,7 @@ class ClientNoPrompt:
                 label_keys = list(self.label_to_id.keys())
                 converted_target = torch.tensor([self.label_to_id[label] for label in labels])
                 
-                batch = []                                                                                 # 5 batch 的包装方式要重做。
+                batch = []  
                 label_probs = []
                 for i in range(len(test_batches['sentence'][step])): #  change to single one each. 
                     chat_obj = [{ "role":'user', "content" : test_batches['sentence'][step][i] }]
@@ -88,7 +88,7 @@ class ClientNoPrompt:
                     label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
                 
                 #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
-                logits = torch.stack(label_probs)   # logit 的结合方式要改。
+                logits = torch.stack(label_probs)   #
                 
                 # end. 
                 predictions = logits.argmax(dim=-1)
@@ -116,7 +116,7 @@ class ClientNoPrompt:
                     label_keys = list(self.label_to_id.keys())
                     converted_target = torch.tensor([self.label_to_id[label] for label in labels])
                     
-                    batch = []                                                                                 # 5 batch 的包装方式要重做。
+                    batch = [] 
                     label_probs = []
                     for i in range(len(test_batches['sentence'][step])): #  change to single one each. 
                         chat_obj = [{ "role":'user', "content" : test_batches['sentence'][step][i] }]
@@ -128,7 +128,7 @@ class ClientNoPrompt:
                         label_probs.append(labels_prob) # if the prompt cannto get, it will be -10, meaning that it is very small. 
                     
                     #label_probs = self.complete_GPT.get_regular_label_probs(responses, batch, label_keys, args, if_null = True)
-                    logits = torch.stack(label_probs)   # logit 的结合方式要改。
+                    logits = torch.stack(label_probs)   # 
                     predictions = logits.argmax(dim=-1)
                     # end. 
                     if len(predictions.shape) == 0: predictions = predictions.unsqueeze(0)
