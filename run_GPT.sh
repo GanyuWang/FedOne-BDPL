@@ -12,7 +12,7 @@ echo ${log_file_path}
 CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL_GPT.py \
     --task_name=${task_name} \
     --prompt_tuning_method ${prompt_tuning_method} \
-    --bdpl_gradient_method zero \
+    --bdpl_gradient_method negative \
     --model_name_or_path gpt-3.5-turbo-0125 \
     --per_device_train_batch_size 16 \
     --per_device_eval_batch_size 10 \
@@ -27,8 +27,8 @@ CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL_GPT.py \
     --max_tokens 1 --top_logprob 20\
     --FL_framework FedAvg --num_clients 100 --num_activated_clients ${ac} --num_client_local_step 1 --max_client_train_steps 8000 \
     --early_stop ${early_stop} \
-    --trial --train_trial_step 5 --eval_trial_step 4 --test_trial_step 15\
-    --log_file_name PromptNoTrain_${task_name}_${prompt_tuning_method}_seed${seed}
+    --trial --train_trial_step 1 --eval_trial_step 1 --test_trial_step 1\
+    --log_file_name TempResult
 echo ${log_file_path}
 
 

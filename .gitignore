@@ -17,3 +17,7 @@ tmp*
 .vscode/launch.json
 .env
 test_openai.py
+test_openai.ipynb
+run_glue_discrete_GPT.py
+run_glue_discrete_LM_backup.py
+run_glue_discrete_LM_original.py

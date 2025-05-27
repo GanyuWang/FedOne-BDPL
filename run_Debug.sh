@@ -1,6 +1,7 @@
+
 ac=1
 task_name=cola
-prompt_tuning_method=BDPL
+prompt_tuning_method=prefix-tuning
 prompt_learning_rate=1e-4
 prompt_length=20
 bbt_population_size=200
@@ -12,8 +13,8 @@ echo ${task_name}_${prompt_tuning_method}_
 CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL.py \
     --task_name=${task_name} \
     --prompt_tuning_method ${prompt_tuning_method} \
-    --bdpl_gradient_method zero \
-    --model_name_or_path roberta-base \
+    --bdpl_gradient_method negative \
+    --model_name_or_path roberta-large \
     --per_device_train_batch_size 128 \
     --per_device_eval_batch_size 16 \
     --weight_decay=0 --seed=$seed \
@@ -27,5 +28,6 @@ CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL.py \
     --FL_framework FedAvg --num_clients 100 --num_activated_clients ${ac} --num_client_local_step 10 --max_client_train_steps 8000 \
     --early_stop ${early_stop} \
     --log_file_name TempResult 
-# When runing, skip should all be false. 
+
+
 
