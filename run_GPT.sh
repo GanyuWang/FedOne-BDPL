@@ -28,7 +28,7 @@ CUDA_VISIBLE_DEVICES=0 python ./run_glue_LLM_FL_GPT.py \
     --FL_framework FedAvg --num_clients 100 --num_activated_clients ${ac} --num_client_local_step 1 --max_client_train_steps 8000 \
     --early_stop ${early_stop} \
     --trial --train_trial_step 1 --eval_trial_step 1 --test_trial_step 1\
-    --log_file_name TempResult
+    --log_file_name TempResult/GPT_${task_name}_${prompt_tuning_method}_ps${bbt_population_size}_lr${prompt_learning_rate}_pl${prompt_length}_ac${ac}_es${early_stop}_seed${seed}
 echo ${log_file_path}
 
 

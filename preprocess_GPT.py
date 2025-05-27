@@ -674,7 +674,7 @@ class CSV_log:
         for e in self.field:
             print(e, end=", ")
         print()
-        if log_file_name == "TempResult":
+        if log_file_name.startswith("TempResult"):
             with open(f"{log_file_name}.csv", 'w') as f:
                 write = csv.writer(f)
                 write.writerow(self.field)
