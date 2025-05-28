@@ -131,7 +131,7 @@ To set up the environment, follow these steps:
 
 ### Logging
 
-* `--log_file_name`: Specifies the **file path** for saving training logs. The default value is `TempResult`. When the path starts with `TempResult`, the log file can be overwritten in subsequent runs. **For all other values, the system will prevent overwriting an existing log file to avoid accidental loss of results**. Upon completion of training, the final row of the log file records the test result. 
+* `--log_file_name`: Specifies the **file path** for saving training logs. The default value is `TempResult`. When the path starts with `TempResult`, the log file can be overwritten in subsequent runs. **For all other values, the system will prevent overwriting an existing log file to avoid accidental loss of results**. Upon completion of training, the final row of the log file records the test result. When conducting experiments, it is recommended to create a dedicated folder for each run to organize logs. 
 
 
 
