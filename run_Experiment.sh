@@ -27,5 +27,5 @@ for seed in {101..103}
         --num_train_epochs 100 \
         --FL_framework FedAvg --num_clients 100 --num_activated_clients ${ac} --num_client_local_step 1 --max_client_train_steps 8000 \
         --early_stop ${early_stop} \
-        --log_file_name ${task_name}_${prompt_tuning_method}_ps${bbt_population_size}_lr${prompt_learning_rate}_pl${prompt_length}_ac${ac}_es${early_stop}_seed${seed}
+        --log_file_name TempResult/${task_name}_${prompt_tuning_method}_ps${bbt_population_size}_lr${prompt_learning_rate}_pl${prompt_length}_ac${ac}_es${early_stop}_seed${seed}
 done

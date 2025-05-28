@@ -1,8 +1,29 @@
-# FedOne: Query-Efficient Federated Learning for Black-box Discrete Prompt Learning
 
-The code for our publication in ICML-2025, FedOne: Query-Efficient Federated Learning for Black-box Discrete Prompt Learning. 
+## Project Overview
 
-This code is adapted from https://github.com/shizhediao/Black-Box-Prompt-Learning
+This repository contains the official code for our ICML 2025 paper:
+
+**[FedOne: Query-Efficient Federated Learning for Black-box Discrete Prompt Learning](https://openreview.net/forum?id=QwTDQXllam)**
+
+This work proposes a novel federated framework designed to minimize query costs to cloud-based LLM in black-box discrete prompt learning scenarios. 
+
+The implementation builds upon and extends the codebase from [Black-Box-Prompt-Learning](https://github.com/shizhediao/Black-Box-Prompt-Learning), adapting it to the **federated learning** setting with additional components for client coordination, efficient prompt optimization. 
+
+
+### Main Files
+
+* **RoBERTa-based Experiments**:
+
+  * `preprocess.py`: Performs data loading and preprocessing for RoBERTa tasks.
+  * `run_glue_LLM_FL.py`: Implements the federated learning framework for RoBERTa-based prompt tuning.
+  * `PromptTuningClient/*.py`: Contains client-side implementations of various white-box prompt tuning methods, including BBT, BDPL, Gumbel-BDPL, Prefix-Tuning, and Prompt-Tuning.
+
+* **OpenAI API-based Experiments (GPT models)**:
+
+  * `preprocess_GPT.py`: Handles preprocessing tailored to GPT-based experiments using the [OpenAI API](https://platform.openai.com/docs/overview).
+  * `run_glue_LLM_FL_GPT.py`: Implements the federated learning workflow for black-box prompt tuning with GPT models.
+  * `PromptTuningClient_GPT/*.py`: Includes client-side implementations for black-box prompt learning methods such as BDPL, Gumbel-BDPL, and NoPrompt.
+
 
 
 ## Requirements
@@ -31,7 +52,6 @@ To set up the environment, follow these steps:
    ```bash
    bash run_Experiment.sh
    ```
-   The main file, "run_glue_LLM_FL.py," implements the federated discrete black-box prompt learning framework. The clients doing prompt tuning with different approaches (BBT, BDPL, Gumbel_BDPL, PrefixTuning, PromptTuning) are defined in the folder "PromptTuningClient/*.py". 
 
 2. Run GPT-3.5-turbo experiments:
 
@@ -45,9 +65,6 @@ To set up the environment, follow these steps:
    ```plaintext
    OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    ```
-
-   The main file "run_glue_LLM_FL_GPT.py" implements the federated discrete black-box prompt learning framework with chatGPT. The clients doing black-box prompt prompt learning (BDPL, Gumbel-BDPL, NoPrompt) using GPT-3.5-turbo is defined in the folder "PromptTuningClient_GPT". The primary difference between the GPT experiment and the RoBERTa-base experiment lies in data preprocessing and the method by which each model derives the output logits.
-
 
 
 ## Important Command-Line Arguments
@@ -121,7 +138,4 @@ To set up the environment, follow these steps:
 ## Datasts
    [GLUE benchmark](https://gluebenchmark.com/): MNLI, QQP, SST-2, MRPC, CoLA, QNLI, RTE
 
-
-
-# citation
 

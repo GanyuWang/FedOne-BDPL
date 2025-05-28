@@ -1,5 +1,5 @@
 ac=10
-task_name=qqp
+task_name=sst2
 prompt_tuning_method=BDPL
 prompt_learning_rate=5e-3
 prompt_length=20
