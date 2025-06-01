@@ -40,14 +40,48 @@ To set up the environment, follow these steps:
 
 2. **Install required packages:**
 
-   Use the ``requirement.txt'' to install the required libraries.
+   The installed important packages are: Pytorch (2.7.0 stable). transformers (4.40.2), datasets (2.19.0). accelerate (0.29.3), importlib-metadata (8.7.0). peft (0.10.0). scipy (1.13.0). scikit-learn==1.4.2. numpy==1.26.4. tqdm==4.66.2. cmaes (0.10.0). wandb (0.16.6). 
+   ```bash
+   pip3 install torch torchvision torchaudio
+
+   pip install transformers==4.40.2
+
+   pip install datasets==2.19.0
+
+   pip install accelerate==0.29.3
+
+   pip install importlib-metadata==8.7.0
+
+   pip install peft==0.10.0
+
+   pip install scipy==1.13.0
+
+   pip install scikit-learn==1.4.2
+
+   pip install numpy==1.26.4
+
+   pip install tqdm==4.66.2
+
+   pip install cmaes==0.10.0
+
+   pip install wandb==0.16.6
+   ```
+
+
+   You can also use the `requirement.txt` as reference.  
 
    ```bash
    pip install -r requirements.txt
    ```
 
 
+
 ## Quick Start
+0. For simple test, run `run_Debug.sh`
+   ```bash
+   bash run_Debug.sh
+   ```
+
 1. For RoBERTa-large experiments, run the scripts via 
    ```bash
    bash run_Experiment.sh

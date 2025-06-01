@@ -1,7 +1,7 @@
 # Tuning command. 
 ac=1
-task_name=sst2
-prompt_tuning_method=BDPL
+task_name=cola
+prompt_tuning_method=BBT
 prompt_learning_rate=3e-5
 prompt_length=20
 bbt_population_size=200
