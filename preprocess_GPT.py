@@ -212,8 +212,8 @@ from openai import OpenAI
 class CompleteGPT():
     def __init__(self):
         self.client = OpenAI(
-            #organization='org-c7dvGJnfkgmvqXizttGUqcfr',
-            #project='proj_NxEVtMrlIaSr7NWRw6eeqeZB',
+            #organization='org-xxxxxxxxxxxxxxxxxxx',
+            #project='proj_xxxxxxxxxxxxxxxxxxxxxxx',
         )
         self.wait_time = 1
 

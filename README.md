@@ -40,7 +40,7 @@ To set up the environment, follow these steps:
 
 2. **Install required packages:**
 
-   The installed important packages are: Pytorch (2.7.0 stable). transformers (4.40.2), datasets (2.19.0). accelerate (0.29.3), importlib-metadata (8.7.0). peft (0.10.0). scipy (1.13.0). scikit-learn==1.4.2. numpy==1.26.4. tqdm==4.66.2. cmaes (0.10.0). wandb (0.16.6). 
+   The installed important packages are: Pytorch (2.7.0 stable). transformers (4.40.2), datasets (2.19.0). accelerate (0.29.3), importlib-metadata (8.7.0). peft (0.10.0). scipy (1.13.0). scikit-learn==1.4.2. numpy==1.26.4. tqdm==4.66.2. cmaes (0.10.0). wandb (0.16.6). openai
    ```bash
    pip3 install torch torchvision torchaudio
 
@@ -65,6 +65,8 @@ To set up the environment, follow these steps:
    pip install cmaes==0.10.0
 
    pip install wandb==0.16.6
+
+   pip install openai==1.82.1
    ```
 
 
